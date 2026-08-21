@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS, getSettings, saveSettings } from "../shared/settings.js";
+import { ensureDenizenPermissions, missingOrigins, requiredOrigins } from "../shared/permissions.js";
 
 const LANGS = [
   ["EN", "English"],
@@ -44,9 +45,41 @@ function syncProviderFields() {
   document.getElementById("libre-fields").hidden = !isLibre;
 }
 
+function currentFormSettings() {
+  const translateOutgoing = document.getElementById("translateOutgoing").checked;
+  return {
+    enabled: document.getElementById("enabled").checked,
+    translateIncoming: document.getElementById("translateIncoming").checked,
+    translateOutgoing,
+    showOutgoingPreview: translateOutgoing,
+    myLanguage: document.getElementById("myLanguage").value,
+    targetLanguage: document.getElementById("targetLanguage").value,
+    provider: document.getElementById("provider").value,
+    apiKey: document.getElementById("apiKey").value.trim(),
+    libreUrl: document.getElementById("libreUrl").value.trim() || DEFAULT_SETTINGS.libreUrl,
+    sourceLanguage: DEFAULT_SETTINGS.sourceLanguage,
+  };
+}
+
+async function refreshPermHint() {
+  const hint = document.getElementById("perm-hint");
+  const missing = await missingOrigins(requiredOrigins(currentFormSettings()));
+  if (!missing.length) {
+    hint.textContent = "Site access granted.";
+    return;
+  }
+  hint.textContent =
+    "Missing site access. On Android tap “Grant site access”, then reload Discord.";
+}
+
 const form = document.getElementById("settings-form");
-const status = document.getElementById("status");
-document.getElementById("provider").addEventListener("change", syncProviderFields);
+const saveBtn = document.getElementById("save-btn");
+const grantBtn = document.getElementById("grant-btn");
+document.getElementById("provider").addEventListener("change", () => {
+  syncProviderFields();
+  refreshPermHint();
+});
+document.getElementById("libreUrl").addEventListener("change", refreshPermHint);
 
 async function load() {
   const settings = await getSettings();
@@ -58,32 +91,34 @@ async function load() {
   document.getElementById("provider").value = settings.provider || "deepl";
   document.getElementById("apiKey").value = settings.apiKey || "";
   document.getElementById("libreUrl").value = settings.libreUrl || DEFAULT_SETTINGS.libreUrl;
-  // document.getElementById("libreApiKey").value = settings.libreApiKey || "";
   syncProviderFields();
+  await refreshPermHint();
 }
+
+let savedTimer = 0;
+
+grantBtn.addEventListener("click", async () => {
+  const ok = await ensureDenizenPermissions(currentFormSettings());
+  grantBtn.textContent = ok ? "Granted" : "Denied";
+  window.setTimeout(() => {
+    grantBtn.textContent = "Grant site access";
+  }, 1500);
+  await refreshPermHint();
+});
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const translateOutgoing = document.getElementById("translateOutgoing").checked;
-  await saveSettings({
-    enabled: document.getElementById("enabled").checked,
-    translateIncoming: document.getElementById("translateIncoming").checked,
-    translateOutgoing,
-    showOutgoingPreview: translateOutgoing,
-    myLanguage: document.getElementById("myLanguage").value,
-    targetLanguage: document.getElementById("targetLanguage").value,
-    provider: document.getElementById("provider").value,
-    apiKey: document.getElementById("apiKey").value.trim(),
-    libreUrl: document.getElementById("libreUrl").value.trim() || DEFAULT_SETTINGS.libreUrl,
-    // libreApiKey: document.getElementById("libreApiKey").value.trim(),
-    sourceLanguage: DEFAULT_SETTINGS.sourceLanguage,
-  });
-  status.textContent = "Saved";
-  window.setTimeout(() => {
-    status.textContent = "";
+  const patch = currentFormSettings();
+  await saveSettings(patch);
+  const ok = await ensureDenizenPermissions(patch);
+  saveBtn.textContent = ok ? "Saved" : "Saved (grant access)";
+  window.clearTimeout(savedTimer);
+  savedTimer = window.setTimeout(() => {
+    saveBtn.textContent = "Save";
   }, 1500);
+  await refreshPermHint();
 });
 
 load().catch((err) => {
-  status.textContent = err instanceof Error ? err.message : String(err);
+  saveBtn.textContent = err instanceof Error ? err.message : String(err);
 });
