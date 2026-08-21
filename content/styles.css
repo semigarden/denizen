@@ -1,0 +1,65 @@
+[class*="channelTextArea"] {
+  overflow: hidden !important;
+}
+
+.denizen-translation {
+  margin-top: 4px;
+  padding: 2px 0 2px 8px;
+  border-left: 2px solid #b6f5de;
+  font-size: 1em;
+  font-style: italic;
+  line-height: 1.375;
+  color: #b6f5de;
+  opacity: 1;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  cursor: text;
+}
+
+[class*="repliedTextContent"] > .denizen-translation,
+[class*="repliedTextPreview"] > .denizen-translation,
+[class*="replyBar"] .denizen-translation,
+[class*="repliedMessage"] .denizen-translation,
+[class*="repliedMessage"] + .denizen-translation {
+  margin-top: 2px;
+  font-size: 0.95em;
+}
+
+.denizen-outgoing-preview {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  flex: 1 1 100%;
+  align-self: stretch;
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-left: 2px solid #b6f5de;
+  background: rgba(46, 204, 113, 0.06);
+  font-size: 1em;
+  font-style: italic;
+  line-height: 1.375;
+  color: #b6f5de;
+  opacity: 1;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-height: 0;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  cursor: text;
+  position: relative;
+  z-index: 2;
+}
+
+.denizen-outgoing-preview:empty {
+  display: none;
+}
+
+.denizen-outgoing-preview--error {
+  border-left-color: rgba(242, 63, 67, 0.75);
+  background: rgba(242, 63, 67, 0.08);
+  color: #f23f43;
+  font-style: normal;
+}
