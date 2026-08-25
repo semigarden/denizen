@@ -1,16 +1,4 @@
-*.local.json
-.env
-.env.*
-
 .DS_Store
-Thumbs.db
-*.swp
-.idea/
-.vscode/
-*.code-workspace
-
-web-ext-artifacts/
 *.xpi
 *.zip
-node_modules/
-dist/
+web-ext-artifacts/
