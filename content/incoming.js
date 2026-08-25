@@ -1,8 +1,160 @@
+const ORIGINAL_HTML = "data-denizen-original-html";
+const TRANSLATED = "data-denizen-translated";
+const CACHED_TEXT = "data-denizen-cached-text";
+const CACHED_SRC = "data-denizen-cached-src";
+
+const messageViewState = new Map();
+
+function collectMessageKeys(messageEl) {
+  const keys = [];
+  if (!messageEl) return keys;
+
+  function add(key) {
+    if (key && !keys.includes(key)) keys.push(key);
+  }
+
+  add(messageEl.id);
+  add(messageEl.getAttribute?.("data-list-item-id") || "");
+
+  const content =
+    (messageEl.id && String(messageEl.id).startsWith("message-content-") && messageEl) ||
+    messageEl.querySelector?.('[id^="message-content-"]');
+  add(content?.id || "");
+
+  for (const el of messageEl.querySelectorAll?.('[id^="message-content-"]') || []) {
+    add(el.id);
+  }
+
+  return keys;
+}
+
+function messageKey(messageEl) {
+  return collectMessageKeys(messageEl)[0] || "";
+}
+
+function getStateRecordByKey(key) {
+  if (!key) return null;
+  let record = messageViewState.get(key);
+  if (!record) {
+    record = { view: null, cache: new Map() };
+    messageViewState.set(key, record);
+  }
+  return record;
+}
+
+function getStateRecord(messageEl) {
+  return getStateRecordByKey(messageKey(messageEl));
+}
+
+function getStoredView(messageEl) {
+  let translated = false;
+  let original = false;
+  for (const key of collectMessageKeys(messageEl)) {
+    const view = messageViewState.get(key)?.view;
+    if (view === "translated") translated = true;
+    if (view === "original") original = true;
+  }
+  if (original) return "original";
+  if (translated) return "translated";
+  return null;
+}
+
+function getViewState(messageEl) {
+  return getStoredView(messageEl) ?? (isTranslated(messageEl) ? "translated" : "original");
+}
+
+function setViewState(messageEl, state) {
+  const keys = collectMessageKeys(messageEl);
+  if (!keys.length) return;
+  for (const key of keys) {
+    getStateRecordByKey(key).view = state;
+  }
+}
+
+function findMessageRoot(el) {
+  if (!el?.closest) return null;
+  return (
+    el.closest('[id^="chat-messages-"]') ||
+    el.closest('[data-list-item-id*="chat-messages"]') ||
+    el.closest('[class*="messageListItem"]') ||
+    el.closest('[role="listitem"]') ||
+    null
+  );
+}
+
+function shouldShowTranslation(messageEl) {
+  return Boolean(messageEl) && getStoredView(messageEl) === "translated";
+}
+
+function rememberTranslation(messageEl, src, dst) {
+  if (!src || !dst) return;
+  for (const key of collectMessageKeys(messageEl)) {
+    getStateRecordByKey(key).cache.set(src, dst);
+  }
+}
+
+function getMemoryCachedTranslation(messageEl, srcText) {
+  if (!srcText) return null;
+  const trimmed = srcText.trim();
+  for (const key of collectMessageKeys(messageEl)) {
+    const record = messageViewState.get(key);
+    if (!record?.cache?.size) continue;
+    if (record.cache.has(srcText)) return record.cache.get(srcText);
+    for (const [src, dst] of record.cache.entries()) {
+      if (src.trim() === trimmed) return dst;
+    }
+    if (record.cache.size === 1) return record.cache.values().next().value;
+  }
+  return null;
+}
+
+function showCachedTranslation(messageEl) {
+  if (!shouldShowTranslation(messageEl)) return false;
+  const targets = collectTranslateTargets(messageEl);
+  let applied = false;
+  for (const target of targets) {
+    if (!shouldShowTranslation(messageEl)) return applied;
+    const text = extractMessageText(target.el);
+    if (!text) continue;
+    const cached =
+      getCachedTranslation(target.el, text) || getMemoryCachedTranslation(messageEl, text);
+    if (!cached) continue;
+    setCachedTranslation(target.el, text, cached);
+    applyInlineText(target.el, cached);
+    rememberTranslation(messageEl, text, cached);
+    applied = true;
+  }
+  return applied;
+}
+
+function resetMessageToOriginal(messageEl) {
+  restoreMessage(messageEl);
+  messageEl.querySelectorAll(".denizen-inline-error").forEach((el) => {
+    el.classList.remove("denizen-inline-error");
+  });
+  setViewState(messageEl, "original");
+}
+
+function findLiveMessageEl(messageEl) {
+  if (messageEl?.isConnected) return messageEl;
+  const keys = collectMessageKeys(messageEl);
+  for (const el of collectMessageElements()) {
+    const elKeys = collectMessageKeys(el);
+    if (elKeys.some((key) => keys.includes(key))) return el;
+  }
+  return messageEl;
+}
+
 function extractMessageText(contentEl) {
   if (!contentEl) return "";
   const clone = contentEl.cloneNode(true);
-  clone.querySelectorAll(".denizen-translation, [data-denizen-translation]").forEach((n) => n.remove());
-  return (clone.innerText || "").trim();
+  clone.classList.remove("denizen-content-suppressed");
+  clone
+    .querySelectorAll(
+      ".denizen-translate-btn, .denizen-translate-wrap, .denizen-inline-translation"
+    )
+    .forEach((n) => n.remove());
+  return (clone.innerText || clone.textContent || "").trim();
 }
 
 function findReplyRoot(messageEl) {
@@ -19,15 +171,25 @@ function findMessageContent(messageEl) {
 
   for (const el of all) {
     if (replyRoot && replyRoot.contains(el)) continue;
+    if (el.classList.contains("denizen-inline-translation")) continue;
     return el;
   }
 
-  if (all.length) return all[all.length - 1];
+  if (all.length) {
+    const last = all.findLast?.((el) => !el.classList.contains("denizen-inline-translation"))
+      ?? [...all].reverse().find((el) => !el.classList.contains("denizen-inline-translation"));
+    if (last) return last;
+  }
 
-  const fallbacks = [...messageEl.querySelectorAll('[class*="messageContent"]')];
+  const fallbacks = [
+    ...messageEl.querySelectorAll('[class*="messageContent"]'),
+    ...messageEl.querySelectorAll('[class*="markup_"], [class*="markup-"]'),
+  ];
   for (const el of fallbacks) {
+    if (el.classList.contains("denizen-inline-translation")) continue;
     if (replyRoot && replyRoot.contains(el)) continue;
     if (el.closest('[class*="repliedMessage"], [class*="replyBar"]')) continue;
+    if (!extractMessageText(el)) continue;
     return el;
   }
   return null;
@@ -38,69 +200,413 @@ function findReplyContent(messageEl) {
   if (!replyRoot) return null;
 
   const nested =
-    replyRoot.querySelector('[class*="repliedTextContent"]') ||
-    replyRoot.querySelector('[class*="repliedTextPreview"]') ||
-    replyRoot.querySelector('[class*="messageContent"]');
+    replyRoot.querySelector('[class*="repliedTextContent"]:not(.denizen-inline-translation)') ||
+    replyRoot.querySelector('[class*="repliedTextPreview"]:not(.denizen-inline-translation)') ||
+    replyRoot.querySelector('[class*="messageContent"]:not(.denizen-inline-translation)');
 
   if (nested && extractMessageText(nested)) return nested;
   if (extractMessageText(replyRoot)) return replyRoot;
   return null;
 }
 
-function translationAnchor(contentEl, messageEl) {
-  const replyRoot = findReplyRoot(messageEl);
-  if (replyRoot && (contentEl === replyRoot || replyRoot.contains(contentEl))) {
-    return replyRoot;
-  }
-  return contentEl;
-}
-
 function collectTranslateTargets(messageEl) {
-  /** @type {{ el: Element, anchor: Element }[]} */
   const targets = [];
   const reply = findReplyContent(messageEl);
   const main = findMessageContent(messageEl);
 
   if (reply) {
-    targets.push({ el: reply, anchor: translationAnchor(reply, messageEl) });
+    targets.push({ el: reply });
   }
   if (main && main !== reply && !(reply && reply.contains(main))) {
-    targets.push({ el: main, anchor: main });
+    targets.push({ el: main });
   }
   return targets;
 }
 
-function messageKey(messageEl) {
-  return messageEl.id || "";
+function isTranslated(messageEl) {
+  return Boolean(
+    messageEl?.querySelector?.(`.denizen-inline-translation, [${TRANSLATED}="1"], [${ORIGINAL_HTML}], .denizen-content-suppressed`)
+  );
 }
 
-function clearTranslationNodes(messageEl) {
-  messageEl.querySelectorAll(".denizen-translation").forEach((n) => n.remove());
+function getCachedTranslation(contentEl, srcText) {
+  if (!contentEl || !srcText) return null;
+  if (contentEl.getAttribute(CACHED_SRC) !== srcText) return null;
+  return contentEl.getAttribute(CACHED_TEXT);
 }
 
-function ensureTranslationNode(anchorEl) {
-  if (!anchorEl.dataset.denizenTargetId) {
-    anchorEl.dataset.denizenTargetId = `t-${Math.random().toString(36).slice(2, 9)}`;
+function setCachedTranslation(contentEl, srcText, translatedText) {
+  contentEl.setAttribute(CACHED_SRC, srcText);
+  contentEl.setAttribute(CACHED_TEXT, translatedText);
+}
+
+function clearCachedTranslation(contentEl) {
+  contentEl.removeAttribute(CACHED_SRC);
+  contentEl.removeAttribute(CACHED_TEXT);
+}
+
+function ensureContentTargetId(contentEl) {
+  if (contentEl.id && String(contentEl.id).startsWith("message-content-")) {
+    contentEl.dataset.denizenTargetId = contentEl.id;
+    return contentEl.id;
   }
-  const tid = anchorEl.dataset.denizenTargetId;
-
-  let node = anchorEl.nextElementSibling;
-  if (!(node?.classList?.contains("denizen-translation") && node.dataset.denizenFor === tid)) {
-    node = null;
+  if (!contentEl.dataset.denizenTargetId) {
+    contentEl.dataset.denizenTargetId = `t-${Math.random().toString(36).slice(2, 9)}`;
   }
-  if (node) return node;
-
-  node = document.createElement("div");
-  node.className = "denizen-translation";
-  node.setAttribute(DENIZEN_ATTR.TRANSLATION, "1");
-  node.dataset.denizenFor = tid;
-  node.setAttribute("aria-label", "Translation");
-  anchorEl.insertAdjacentElement("afterend", node);
-  return node;
+  return contentEl.dataset.denizenTargetId;
 }
 
-function isProcessedFor(messageEl, key) {
-  return messageEl.getAttribute(DENIZEN_ATTR.PROCESSED) === key;
+function findTranslationOverlay(contentEl) {
+  const tid = contentEl.dataset.denizenTargetId;
+  if (!tid) return null;
+  const parent = contentEl.parentElement;
+  if (!parent) return null;
+  return parent.querySelector(`.denizen-inline-translation[data-denizen-for="${CSS.escape(tid)}"]`);
+}
+
+function applyInlineText(contentEl, text) {
+  const messageEl = findMessageRoot(contentEl);
+  if (messageEl && getStoredView(messageEl) === "original") return;
+
+  const tid = ensureContentTargetId(contentEl);
+  contentEl.setAttribute(TRANSLATED, "1");
+  contentEl.setAttribute(ORIGINAL_HTML, "1");
+  contentEl.classList.add("denizen-content-suppressed");
+
+  let sibling = contentEl.nextElementSibling;
+  while (sibling?.classList?.contains("denizen-inline-translation")) {
+    const next = sibling.nextElementSibling;
+    if (sibling.dataset.denizenFor !== tid) sibling.remove();
+    sibling = next;
+  }
+
+  let overlay = findTranslationOverlay(contentEl);
+  if (!overlay) {
+    overlay = document.createElement(contentEl.tagName || "div");
+    overlay.className = `${contentEl.className} denizen-inline-translation`.replace(
+      /\bdenizen-content-suppressed\b/g,
+      ""
+    );
+    overlay.dataset.denizenFor = tid;
+    overlay.removeAttribute("id");
+    overlay.setAttribute(TRANSLATED, "1");
+    contentEl.insertAdjacentElement("afterend", overlay);
+  }
+  if (messageEl && getStoredView(messageEl) === "original") {
+    overlay.remove();
+    contentEl.classList.remove("denizen-content-suppressed");
+    contentEl.removeAttribute(ORIGINAL_HTML);
+    contentEl.removeAttribute(TRANSLATED);
+    return;
+  }
+  overlay.textContent = text;
+}
+
+function showLoadingInline(contentEl) {
+  applyInlineText(contentEl, "…");
+}
+
+function restoreOriginal(contentEl) {
+  findTranslationOverlay(contentEl)?.remove();
+  let sibling = contentEl.nextElementSibling;
+  while (sibling?.classList?.contains("denizen-inline-translation")) {
+    const next = sibling.nextElementSibling;
+    sibling.remove();
+    sibling = next;
+  }
+  contentEl.classList.remove("denizen-content-suppressed");
+  contentEl.removeAttribute(ORIGINAL_HTML);
+  contentEl.removeAttribute(TRANSLATED);
+}
+
+function restoreMessage(messageEl) {
+  messageEl.querySelectorAll(".denizen-inline-translation").forEach((n) => n.remove());
+  messageEl.querySelectorAll(`[${TRANSLATED}], [${ORIGINAL_HTML}], .denizen-content-suppressed`).forEach((el) => {
+    el.classList.remove("denizen-content-suppressed");
+    el.removeAttribute(ORIGINAL_HTML);
+    el.removeAttribute(TRANSLATED);
+  });
+}
+
+function getTranslateWrap(messageEl) {
+  return messageEl.querySelector(".denizen-translate-wrap");
+}
+
+function getTranslateButton(messageEl) {
+  return messageEl.querySelector(".denizen-translate-btn");
+}
+
+function setTranslateButtonLabel(messageEl, label) {
+  const btn = getTranslateButton(messageEl);
+  if (!btn) return;
+  const busy = label === "…" || label === "Wait…";
+  const active = label === "Original";
+  setDenizenIconButton(btn, busy ? "Translating…" : label, { active, busy });
+}
+
+function ensureContentSuppressedForOverlays(messageEl) {
+  for (const target of collectTranslateTargets(messageEl)) {
+    const overlay =
+      findTranslationOverlay(target.el) ||
+      (target.el.nextElementSibling?.classList?.contains("denizen-inline-translation")
+        ? target.el.nextElementSibling
+        : null);
+    if (!overlay) continue;
+    if (overlay.dataset.denizenFor && !target.el.dataset.denizenTargetId) {
+      target.el.dataset.denizenTargetId = overlay.dataset.denizenFor;
+    }
+    target.el.classList.add("denizen-content-suppressed");
+    target.el.setAttribute(TRANSLATED, "1");
+    target.el.setAttribute(ORIGINAL_HTML, "1");
+  }
+}
+
+function syncTranslateButtonLabel(messageEl) {
+  if (shouldShowTranslation(messageEl)) {
+    showCachedTranslation(messageEl);
+    if (!shouldShowTranslation(messageEl)) {
+      restoreMessage(messageEl);
+      setTranslateButtonLabel(messageEl, "Translate");
+      return;
+    }
+    ensureContentSuppressedForOverlays(messageEl);
+    setTranslateButtonLabel(messageEl, "Original");
+    return;
+  }
+
+  if (isTranslated(messageEl)) {
+    restoreMessage(messageEl);
+  }
+  setTranslateButtonLabel(messageEl, "Translate");
+}
+
+function removeTranslateButtons() {
+  document.querySelectorAll(".denizen-translate-wrap").forEach((el) => el.remove());
+}
+
+function findReactionsContainer(messageEl) {
+  const replyRoot = findReplyRoot(messageEl);
+  for (const el of messageEl.querySelectorAll('[class*="reactions"]')) {
+    if (replyRoot && replyRoot.contains(el)) continue;
+    if (el.closest(".denizen-translate-wrap")) continue;
+    if (!el.querySelector('[class*="reaction"], [class*="emoji"]')) continue;
+    return el;
+  }
+  return null;
+}
+
+function placeTranslateButton(messageEl, wrap) {
+  const reactions = findReactionsContainer(messageEl);
+  if (reactions) {
+    wrap.classList.add("denizen-translate-wrap--with-reactions");
+    if (wrap.parentElement !== reactions || reactions.lastElementChild !== wrap) {
+      reactions.appendChild(wrap);
+    }
+    return;
+  }
+
+  wrap.classList.remove("denizen-translate-wrap--with-reactions");
+  const main = findMessageContent(messageEl);
+  if (!main) return;
+  const overlay =
+    findTranslationOverlay(main) ||
+    (main.nextElementSibling?.classList?.contains("denizen-inline-translation")
+      ? main.nextElementSibling
+      : null);
+  const anchor = overlay || main;
+  if (wrap.previousElementSibling !== anchor || !wrap.isConnected) {
+    anchor.insertAdjacentElement("afterend", wrap);
+  }
+}
+
+function ensureTranslateButton(messageEl, getSettingsSnapshot) {
+  const settings = getSettingsSnapshot();
+  if (!settings?.enabled) return;
+
+  const main = findMessageContent(messageEl);
+  if (!main || !extractMessageText(main)) return;
+
+  let wrap = getTranslateWrap(messageEl);
+  let btn = getTranslateButton(messageEl);
+
+  if (!wrap || !btn) {
+    wrap?.remove();
+    wrap = document.createElement("span");
+    wrap.className = "denizen-translate-wrap";
+
+    btn = document.createElement("div");
+    btn.className = "denizen-translate-btn";
+    btn.setAttribute("role", "button");
+    btn.tabIndex = 0;
+
+    const initialLabel = getViewState(messageEl) === "translated" ? "Original" : "Translate";
+    setDenizenIconButton(btn, initialLabel, { active: initialLabel === "Original" });
+
+    const onActivate = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const live = findLiveMessageEl(messageEl) || messageEl;
+      handleTranslateClick(live, getSettingsSnapshot);
+    };
+    btn.addEventListener("click", onActivate);
+    btn.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") onActivate(event);
+    });
+
+    wrap.appendChild(btn);
+  }
+
+  placeTranslateButton(messageEl, wrap);
+  syncTranslateButtonLabel(messageEl);
+}
+
+async function translateTarget(target, settings, messageEl) {
+  if (messageEl && getStoredView(messageEl) === "original") return false;
+
+  const text = extractMessageText(target.el);
+  if (!text) return false;
+
+  const record = messageEl ? getStateRecord(messageEl) : null;
+  const cached =
+    getCachedTranslation(target.el, text) ||
+    (record?.cache?.has(text) ? record.cache.get(text) : null);
+  if (cached) {
+    if (messageEl && getStoredView(messageEl) === "original") return false;
+    setCachedTranslation(target.el, text, cached);
+    if (messageEl) rememberTranslation(messageEl, text, cached);
+    applyInlineText(target.el, cached);
+    return getStoredView(messageEl) !== "original";
+  }
+
+  const result = await translateText(text, settings.incoming, "auto");
+  if (messageEl && getStoredView(messageEl) === "original") return false;
+  if (translationUnchanged(result, text, settings.incoming)) {
+    restoreOriginal(target.el);
+    clearCachedTranslation(target.el);
+    return false;
+  }
+
+  setCachedTranslation(target.el, text, result.text);
+  if (messageEl) rememberTranslation(messageEl, text, result.text);
+  applyInlineText(target.el, result.text);
+  return getStoredView(messageEl) !== "original";
+}
+
+async function processIncomingMessage(
+  messageEl,
+  settings,
+  getSettingsSnapshot,
+  { showLoading = false } = {}
+) {
+  if (!settings.enabled) return;
+
+  const key = messageKey(messageEl);
+  if (!key) return;
+
+  const targets = collectTranslateTargets(messageEl);
+  if (!targets.length) return;
+
+  const hasText = targets.some((t) => extractMessageText(t.el));
+  if (!hasText) return;
+
+  messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, `pending:${key}`);
+
+  if (showLoading) {
+    for (const target of targets) {
+      const text = extractMessageText(target.el);
+      if (!getCachedTranslation(target.el, text)) {
+        showLoadingInline(target.el);
+      }
+    }
+  }
+
+  let rateLimited = false;
+  let lastError = "";
+  let translated = false;
+
+  for (const target of targets) {
+    try {
+      if (await translateTarget(target, settings, messageEl)) translated = true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      lastError = msg;
+      if (msg.includes("429") || msg.includes("rate limited")) {
+        rateLimited = true;
+      }
+      console.warn("[Denizen] translate target failed:", err);
+    }
+  }
+
+  if (getStoredView(messageEl) === "original") {
+    restoreMessage(messageEl);
+    ensureTranslateButton(messageEl, getSettingsSnapshot);
+    return;
+  }
+
+  if (messageKey(messageEl) !== key) return;
+
+  if (rateLimited) {
+    restoreMessage(messageEl);
+    setViewState(messageEl, "original");
+    const until = Date.now() + 30_000;
+    messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, `limited:${key}:${until}`);
+    ensureTranslateButton(messageEl, getSettingsSnapshot);
+    return;
+  }
+
+  if (lastError && !translated) {
+    restoreMessage(messageEl);
+    setViewState(messageEl, "original");
+    if (showLoading) {
+      const main = findMessageContent(messageEl) || targets[0]?.el;
+      if (main) {
+        applyInlineText(main, `Translation error: ${lastError}`);
+        main.classList.add("denizen-inline-error");
+      }
+    }
+    messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, key);
+    ensureTranslateButton(messageEl, getSettingsSnapshot);
+    return;
+  }
+
+  setViewState(messageEl, translated ? "translated" : "original");
+  messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, key);
+  ensureTranslateButton(messageEl, getSettingsSnapshot);
+}
+
+async function handleTranslateClick(messageEl, getSettingsSnapshot) {
+  const settings = getSettingsSnapshot();
+  if (!settings?.enabled) return;
+
+  messageEl = findLiveMessageEl(messageEl) || messageEl;
+
+  const key = messageKey(messageEl);
+  if (!key) return;
+
+  if (isRateLimitedFor(messageEl, key)) {
+    setTranslateButtonLabel(messageEl, "Wait…");
+    return;
+  }
+
+  if (getViewState(messageEl) === "translated") {
+    resetMessageToOriginal(messageEl);
+    messageEl.removeAttribute(DENIZEN_ATTR.PROCESSED);
+    ensureTranslateButton(messageEl, getSettingsSnapshot);
+    return;
+  }
+
+  if (isPendingFor(messageEl, key)) return;
+
+  setViewState(messageEl, "translated");
+
+  if (showCachedTranslation(messageEl)) {
+    messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, key);
+    ensureTranslateButton(messageEl, getSettingsSnapshot);
+    return;
+  }
+
+  setTranslateButtonLabel(messageEl, "…");
+  await processIncomingMessage(messageEl, settings, getSettingsSnapshot, { showLoading: true });
 }
 
 function isPendingFor(messageEl, key) {
@@ -114,168 +620,109 @@ function isRateLimitedFor(messageEl, key) {
   return Number.isFinite(until) && Date.now() < until;
 }
 
-/** @type {Set<string>} */
-const queuedKeys = new Set();
-/** @type {string[]} */
-const queue = [];
-let draining = false;
-
-async function translateTarget(target, settings) {
-  const text = extractMessageText(target.el);
-  if (!text) return false;
-
-  const result = await translateText(text, settings.myLanguage, settings.sourceLanguage || "auto");
-  if (sameLanguage(result.detectedFrom, settings.myLanguage) || result.text.trim() === text.trim()) {
-    return false;
-  }
-
-  const node = ensureTranslationNode(target.anchor);
-  node.textContent = result.text;
-  return true;
-}
-
-async function processIncomingMessage(messageEl, settings) {
-  if (!settings.enabled || !settings.translateIncoming) return;
-
-  const key = messageKey(messageEl);
-  if (!key) return;
-  if (isProcessedFor(messageEl, key) || isPendingFor(messageEl, key)) return;
-  if (isRateLimitedFor(messageEl, key)) return;
-
-  const targets = collectTranslateTargets(messageEl);
-  if (!targets.length) {
-    messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, key);
-    return;
-  }
-
-  const hasText = targets.some((t) => extractMessageText(t.el));
-  if (!hasText) {
-    clearTranslationNodes(messageEl);
-    messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, key);
-    return;
-  }
-
-  clearTranslationNodes(messageEl);
-  messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, `pending:${key}`);
-
-  let rateLimited = false;
-  let hardError = false;
-
-  for (const target of targets) {
-    try {
-      await translateTarget(target, settings);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("429") || msg.includes("rate limited")) {
-        rateLimited = true;
-      } else {
-        hardError = true;
-      }
-      console.warn("[Denizen] translate target failed:", err);
-    }
-  }
-
-  if (messageKey(messageEl) !== key) return;
-
-  if (rateLimited) {
-    const until = Date.now() + 30_000;
-    messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, `limited:${key}:${until}`);
-    return;
-  }
-
-  if (hardError && !messageEl.querySelector(".denizen-translation")) {
-    messageEl.removeAttribute(DENIZEN_ATTR.PROCESSED);
-    return;
-  }
-
-  messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, key);
-}
-
-function enqueueMessage(messageEl, getSettingsSnapshot) {
-  const key = messageKey(messageEl);
-  if (!key || queuedKeys.has(key)) return;
-  queuedKeys.add(key);
-  queue.push(key);
-
-  if (!draining) {
-    draining = true;
-    drainQueue(getSettingsSnapshot);
-  }
-}
-
-async function drainQueue(getSettingsSnapshot) {
-  while (queue.length) {
-    const key = queue.shift();
-    queuedKeys.delete(key);
-    const settings = getSettingsSnapshot();
-    if (!settings?.enabled || !settings.translateIncoming) continue;
-
-    const messageEl = document.getElementById(key);
-    if (!messageEl) continue;
-
-    await processIncomingMessage(messageEl, settings);
-  }
-  draining = false;
-}
-
 function collectMessageElements() {
-  const byId = document.querySelectorAll(SELECTORS.messageListItem);
-  if (byId.length) return byId;
-  return document.querySelectorAll('[id^="chat-messages-"]');
-}
+  const map = new Map();
 
-function scanVisibleMessages(getSettingsSnapshot) {
-  const settings = getSettingsSnapshot();
-  if (!settings?.enabled || !settings.translateIncoming) return;
-  for (const el of collectMessageElements()) {
-    enqueueMessage(el, getSettingsSnapshot);
+  function add(el, key) {
+    if (!el || !key || map.has(key)) return;
+    map.set(key, el);
   }
+
+  for (const el of document.querySelectorAll('[id^="chat-messages-"]')) {
+    add(el, el.id);
+  }
+  for (const el of document.querySelectorAll('[data-list-item-id*="chat-messages"]')) {
+    add(el, el.getAttribute("data-list-item-id") || "");
+  }
+  for (const el of document.querySelectorAll('[class*="messageListItem"]')) {
+    add(el, messageKey(el) || el.id || `mli-${map.size}`);
+  }
+
+  for (const content of document.querySelectorAll('[id^="message-content-"]')) {
+    const wrap =
+      content.closest('[id^="chat-messages-"]') ||
+      content.closest('[data-list-item-id*="chat-messages"]') ||
+      content.closest('[class*="messageListItem"]') ||
+      content.closest('[role="listitem"]') ||
+      content.closest("li") ||
+      content;
+    add(wrap, messageKey(wrap) || content.id);
+  }
+
+  if (map.size) return [...map.values()];
+
+  const scroller = document.querySelector(
+    '[data-list-id="chat-messages"], [class*="scrollerInner"][role="log"], [aria-label*="Messages in" i]'
+  );
+  if (!scroller) return [];
+
+  for (const el of scroller.querySelectorAll('[role="listitem"], li, [class*="message_"]')) {
+    const hasText =
+      el.querySelector('[id^="message-content-"], [class*="markup_"], [class*="markup-"], [class*="messageContent"]');
+    if (!hasText) continue;
+    const key = messageKey(el) || el.id || `scroller-${map.size}-${(el.textContent || "").slice(0, 24)}`;
+    add(el, key);
+  }
+
+  return [...map.values()];
 }
 
 function startMessageObserver(getSettingsSnapshot) {
   let scanTimer = 0;
 
-  function scheduleScan() {
+  function syncMessages() {
+    const settings = getSettingsSnapshot();
+    if (!settings?.enabled) {
+      removeTranslateButtons();
+      return;
+    }
+
+    for (const el of collectMessageElements()) {
+      ensureTranslateButton(el, getSettingsSnapshot);
+    }
+  }
+
+  function scheduleSync() {
     if (scanTimer) return;
     scanTimer = window.setTimeout(() => {
       scanTimer = 0;
-      scanVisibleMessages(getSettingsSnapshot);
-    }, 250);
+      syncMessages();
+    }, 200);
   }
 
-  const observer = new MutationObserver((mutations) => {
+  const mutationObserver = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       if (mutation.type === "childList" && mutation.addedNodes.length) {
-        scheduleScan();
+        scheduleSync();
         return;
-      }
-      if (mutation.type === "attributes" && mutation.attributeName === "id") {
-        const t = mutation.target;
-        if (t instanceof Element && t.id && t.id.startsWith("chat-messages-")) {
-          t.removeAttribute(DENIZEN_ATTR.PROCESSED);
-          scheduleScan();
-          return;
-        }
       }
     }
   });
 
-  observer.observe(document.body, {
+  const root = document.body || document.documentElement;
+  mutationObserver.observe(root, {
     childList: true,
     subtree: true,
-    attributes: true,
-    attributeFilter: ["id"],
   });
 
-  const intervalId = window.setInterval(() => {
-    scanVisibleMessages(getSettingsSnapshot);
-  }, 4000);
+  const intervalId = window.setInterval(syncMessages, 3000);
+  syncMessages();
+}
 
-  scanVisibleMessages(getSettingsSnapshot);
-
-  return () => {
-    observer.disconnect();
-    window.clearInterval(intervalId);
-    if (scanTimer) window.clearTimeout(scanTimer);
-  };
+function resetIncomingTranslations() {
+  document.querySelectorAll(`[${DENIZEN_ATTR.PROCESSED}]`).forEach((el) => {
+    el.removeAttribute(DENIZEN_ATTR.PROCESSED);
+  });
+  document.querySelectorAll(".denizen-inline-translation").forEach((el) => el.remove());
+  document.querySelectorAll(`[${ORIGINAL_HTML}], .denizen-content-suppressed`).forEach((el) => {
+    el.classList.remove("denizen-content-suppressed", "denizen-inline-error");
+    el.removeAttribute(ORIGINAL_HTML);
+    el.removeAttribute(TRANSLATED);
+  });
+  document.querySelectorAll(`[${CACHED_TEXT}], [${CACHED_SRC}]`).forEach((el) => {
+    clearCachedTranslation(el);
+  });
+  messageViewState.clear();
+  removeTranslateButtons();
+  hideDenizenTooltip();
 }

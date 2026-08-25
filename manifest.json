@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Denizen",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Firefox extension for translating Discord messages",
   "browser_specific_settings": {
     "gecko": {
@@ -20,17 +20,10 @@
     "https://discord.com/*",
     "https://ptb.discord.com/*",
     "https://canary.discord.com/*",
-    "https://api-free.deepl.com/*",
-    "https://api.deepl.com/*",
-    "http://127.0.0.1:5000/*",
-    "http://localhost:5000/*"
-  ],
-  "optional_host_permissions": [
-    "http://*/*",
-    "https://*/*"
+    "https://translate.google.com/*"
   ],
   "background": {
-    "scripts": ["background/service-worker.js"],
+    "scripts": ["service-worker.js"],
     "type": "module"
   },
   "content_scripts": [
@@ -47,23 +40,20 @@
         "content/index.js"
       ],
       "css": ["content/styles.css"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": false
     }
   ],
-  "options_ui": {
-    "page": "options/options.html",
-    "open_in_tab": true
-  },
   "action": {
-    "default_title": "Settings",
-    "default_popup": "options/popup.html",
-    "default_icon": "icons/icon.svg"
+    "default_title": "Denizen",
+    "default_popup": "popup/popup.html",
+    "default_icon": "icon.svg"
   },
   "icons": {
-    "16": "icons/icon.svg",
-    "32": "icons/icon.svg",
-    "48": "icons/icon.svg",
-    "96": "icons/icon.svg",
-    "128": "icons/icon.svg"
+    "16": "icon.svg",
+    "32": "icon.svg",
+    "48": "icon.svg",
+    "96": "icon.svg",
+    "128": "icon.svg"
   }
 }

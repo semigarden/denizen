@@ -1,45 +1,31 @@
-const DENIZEN_MSG = {
-  TRANSLATE: "denizen:translate",
-  GET_SETTINGS: "denizen:getSettings",
-  SETTINGS_UPDATED: "denizen:settingsUpdated",
-};
-
 const DENIZEN_ATTR = {
   PROCESSED: "data-denizen-processed",
-  TRANSLATION: "data-denizen-translation",
 };
 
-const SELECTORS = {
-  messageListItem: 'li[id^="chat-messages-"]',
-  messageContent: '[id^="message-content-"]',
-  repliedTextContent:
-    '[class*="repliedTextContent"], [class*="repliedTextPreview"], [class*="messageContent_"][class*="replied"]',
-  composer: 'div[role="textbox"][data-slate-editor="true"]',
-  form: "form",
+const DEFAULT_SETTINGS = {
+  enabled: true,
+  incoming: "en",
+  outgoing: "ru",
 };
 
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+const SETTINGS_STORAGE_KEY = "denizenSettings";
 
-/**
- * @returns {Promise<object>}
- */
 async function getSettings() {
-  const res = await browser.runtime.sendMessage({ type: DENIZEN_MSG.GET_SETTINGS });
-  if (!res?.ok) throw new Error(res?.error || "Failed to load settings");
-  return res.settings;
+  const stored = await browser.storage.local.get(SETTINGS_STORAGE_KEY);
+  const raw = stored[SETTINGS_STORAGE_KEY] || {};
+  const merged = { ...DEFAULT_SETTINGS, ...raw };
+  merged.incoming =
+    String(raw.incoming ?? raw.language ?? DEFAULT_SETTINGS.incoming).trim() ||
+    DEFAULT_SETTINGS.incoming;
+  merged.outgoing =
+    String(raw.outgoing ?? DEFAULT_SETTINGS.outgoing).trim() || DEFAULT_SETTINGS.outgoing;
+  return merged;
 }
 
-/**
- * @param {string} text
- * @param {string} to
- * @param {string} [from]
- */
 async function translateText(text, to, from = "auto") {
   const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const res = await browser.runtime.sendMessage({
-    type: DENIZEN_MSG.TRANSLATE,
+    type: "denizen:translate",
     requestId,
     text,
     from,
@@ -53,9 +39,108 @@ function normalizeLang(code) {
   return String(code || "").toUpperCase();
 }
 
-function sameLanguage(detected, myLanguage) {
+function sameLanguage(detected, language) {
   const a = normalizeLang(detected);
-  const b = normalizeLang(myLanguage);
+  const b = normalizeLang(language);
   if (!a || !b) return false;
   return a === b || a.startsWith(b) || b.startsWith(a);
+}
+
+function translationUnchanged(result, text, language) {
+  return sameLanguage(result.detectedFrom, language) || result.text.trim() === text.trim();
+}
+
+function denizenIconSvg() {
+  return (
+    '<svg class="denizen-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="m5 8 6 6"/>' +
+    '<path d="m4 14 6-6 2-3"/>' +
+    '<path d="M2 5h12"/>' +
+    '<path d="M7 2h1"/>' +
+    '<path d="m22 22-5-10-5 10"/>' +
+    '<path d="M14 18h6"/>' +
+    "</svg>"
+  );
+}
+
+function ensureDenizenTooltip() {
+  let tip = document.querySelector(".denizen-tooltip");
+  if (tip) return tip;
+
+  tip = document.createElement("div");
+  tip.className = "denizen-tooltip denizen-tooltip--top";
+  tip.setAttribute("role", "tooltip");
+  tip.hidden = true;
+  tip.innerHTML =
+    '<div class="denizen-tooltip-pointer"></div>' +
+    '<div class="denizen-tooltip-content"></div>';
+  (document.body || document.documentElement).appendChild(tip);
+  return tip;
+}
+
+function hideDenizenTooltip() {
+  const tip = document.querySelector(".denizen-tooltip");
+  if (!tip) return;
+  tip.hidden = true;
+  tip.classList.remove("denizen-tooltip--visible");
+}
+
+function showDenizenTooltip(anchor, label) {
+  if (!anchor || !label) return;
+  const tip = ensureDenizenTooltip();
+  const content = tip.querySelector(".denizen-tooltip-content");
+  if (content) content.textContent = label;
+
+  tip.hidden = false;
+  tip.style.left = "0px";
+  tip.style.top = "0px";
+  tip.classList.add("denizen-tooltip--visible");
+
+  const rect = anchor.getBoundingClientRect();
+  const tipRect = tip.getBoundingClientRect();
+  const left = rect.left + rect.width / 2;
+  const top = rect.top - tipRect.height - 6;
+  tip.style.left = `${left}px`;
+  tip.style.top = `${Math.max(4, top)}px`;
+}
+
+function bindDenizenTooltip(btn) {
+  if (!btn || btn.dataset.denizenTooltipBound) return;
+  btn.dataset.denizenTooltipBound = "1";
+
+  let showTimer = 0;
+
+  const scheduleShow = () => {
+    if (showTimer) window.clearTimeout(showTimer);
+    showTimer = window.setTimeout(() => {
+      showTimer = 0;
+      showDenizenTooltip(btn, btn.getAttribute("aria-label") || "");
+    }, 300);
+  };
+
+  const hide = () => {
+    if (showTimer) {
+      window.clearTimeout(showTimer);
+      showTimer = 0;
+    }
+    hideDenizenTooltip();
+  };
+
+  btn.addEventListener("mouseenter", scheduleShow);
+  btn.addEventListener("mouseleave", hide);
+  btn.addEventListener("focus", scheduleShow);
+  btn.addEventListener("blur", hide);
+  btn.addEventListener("click", hide);
+}
+
+function setDenizenIconButton(btn, label, { active = false, busy = false } = {}) {
+  if (!btn) return;
+  if (!btn.querySelector(".denizen-icon")) {
+    btn.innerHTML = denizenIconSvg();
+  }
+  btn.setAttribute("aria-label", label);
+  btn.removeAttribute("title");
+  btn.classList.toggle("denizen-btn--active", active);
+  btn.classList.toggle("denizen-btn--busy", busy);
+  bindDenizenTooltip(btn);
 }
