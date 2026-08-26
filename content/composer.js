@@ -206,7 +206,7 @@ function ensureDraftTranslateButton(onClick) {
     wrap.className = "denizen-draft-translate-wrap";
 
     btn = document.createElement("div");
-    btn.className = "denizen-draft-translate-btn denizen-translate-btn";
+    btn.className = "denizen-draft-translate-btn";
     btn.setAttribute("role", "button");
     btn.tabIndex = 0;
     setDenizenIconButton(btn, "Translate");

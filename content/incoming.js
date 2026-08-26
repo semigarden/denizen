@@ -86,6 +86,46 @@ function shouldShowTranslation(messageEl) {
   return Boolean(messageEl) && getStoredView(messageEl) === "translated";
 }
 
+function isSameLanguageMessage(messageEl) {
+  for (const key of collectMessageKeys(messageEl)) {
+    if (messageViewState.get(key)?.sameLanguage) return true;
+  }
+  return false;
+}
+
+function markSameLanguage(messageEl) {
+  for (const key of collectMessageKeys(messageEl)) {
+    getStateRecordByKey(key).sameLanguage = true;
+    getStateRecordByKey(key).translationReady = false;
+  }
+}
+
+function isTranslationReady(messageEl) {
+  for (const key of collectMessageKeys(messageEl)) {
+    if (messageViewState.get(key)?.translationReady) return true;
+  }
+  return false;
+}
+
+function markTranslationReady(messageEl) {
+  for (const key of collectMessageKeys(messageEl)) {
+    const record = getStateRecordByKey(key);
+    record.translationReady = true;
+    record.sameLanguage = false;
+  }
+}
+
+function messageHasCachedTranslation(messageEl) {
+  for (const target of collectTranslateTargets(messageEl)) {
+    const text = extractMessageText(target.el);
+    if (!text) continue;
+    if (getCachedTranslation(target.el, text) || getMemoryCachedTranslation(messageEl, text)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function rememberTranslation(messageEl, src, dst) {
   if (!src || !dst) return;
   for (const key of collectMessageKeys(messageEl)) {
@@ -336,12 +376,23 @@ function getTranslateButton(messageEl) {
   return messageEl.querySelector(".denizen-translate-btn");
 }
 
-function setTranslateButtonLabel(messageEl, label) {
+function setTranslateButtonLabel(messageEl, mode, settings) {
   const btn = getTranslateButton(messageEl);
   if (!btn) return;
-  const busy = label === "…" || label === "Wait…";
-  const active = label === "Original";
-  setDenizenIconButton(btn, busy ? "Translating…" : label, { active, busy });
+
+  const lang = languageLabel(settings?.incoming) || settings?.incoming || "";
+  let label = "Translate";
+  if (mode === "translated") label = "See original";
+  else if (mode === "busy") label = "Translating…";
+  else if (mode === "wait") label = "Wait…";
+  else label = lang ? `Translate to ${lang}` : "Translate";
+
+  btn.textContent = label;
+  btn.setAttribute("aria-label", label);
+  btn.removeAttribute("title");
+  btn.classList.toggle("denizen-btn--active", mode === "translated");
+  btn.classList.toggle("denizen-btn--busy", mode === "busy" || mode === "wait");
+  btn.classList.remove("denizen-btn--same");
 }
 
 function ensureContentSuppressedForOverlays(messageEl) {
@@ -361,23 +412,23 @@ function ensureContentSuppressedForOverlays(messageEl) {
   }
 }
 
-function syncTranslateButtonLabel(messageEl) {
+function syncTranslateButtonLabel(messageEl, settings) {
   if (shouldShowTranslation(messageEl)) {
     showCachedTranslation(messageEl);
     if (!shouldShowTranslation(messageEl)) {
       restoreMessage(messageEl);
-      setTranslateButtonLabel(messageEl, "Translate");
+      setTranslateButtonLabel(messageEl, "idle", settings);
       return;
     }
     ensureContentSuppressedForOverlays(messageEl);
-    setTranslateButtonLabel(messageEl, "Original");
+    setTranslateButtonLabel(messageEl, "translated", settings);
     return;
   }
 
   if (isTranslated(messageEl)) {
     restoreMessage(messageEl);
   }
-  setTranslateButtonLabel(messageEl, "Translate");
+  setTranslateButtonLabel(messageEl, "idle", settings);
 }
 
 function removeTranslateButtons() {
@@ -421,10 +472,35 @@ function placeTranslateButton(messageEl, wrap) {
 
 function ensureTranslateButton(messageEl, getSettingsSnapshot) {
   const settings = getSettingsSnapshot();
-  if (!settings?.enabled) return;
+  if (!settings?.enabled) {
+    getTranslateWrap(messageEl)?.remove();
+    return;
+  }
+
+  if (isSameLanguageMessage(messageEl)) {
+    getTranslateWrap(messageEl)?.remove();
+    return;
+  }
+
+  if (messageHasCachedTranslation(messageEl)) {
+    markTranslationReady(messageEl);
+  }
+
+  const canShow =
+    shouldShowTranslation(messageEl) ||
+    isTranslationReady(messageEl) ||
+    messageHasCachedTranslation(messageEl);
+
+  if (!canShow) {
+    getTranslateWrap(messageEl)?.remove();
+    return;
+  }
 
   const main = findMessageContent(messageEl);
-  if (!main || !extractMessageText(main)) return;
+  if (!main || !extractMessageText(main)) {
+    getTranslateWrap(messageEl)?.remove();
+    return;
+  }
 
   let wrap = getTranslateWrap(messageEl);
   let btn = getTranslateButton(messageEl);
@@ -438,9 +514,6 @@ function ensureTranslateButton(messageEl, getSettingsSnapshot) {
     btn.className = "denizen-translate-btn";
     btn.setAttribute("role", "button");
     btn.tabIndex = 0;
-
-    const initialLabel = getViewState(messageEl) === "translated" ? "Original" : "Translate";
-    setDenizenIconButton(btn, initialLabel, { active: initialLabel === "Original" });
 
     const onActivate = (event) => {
       event.preventDefault();
@@ -457,51 +530,53 @@ function ensureTranslateButton(messageEl, getSettingsSnapshot) {
   }
 
   placeTranslateButton(messageEl, wrap);
-  syncTranslateButtonLabel(messageEl);
+  syncTranslateButtonLabel(messageEl, settings);
 }
 
-async function translateTarget(target, settings, messageEl) {
-  if (messageEl && getStoredView(messageEl) === "original") return false;
+async function translateTarget(target, settings, messageEl, { apply = true } = {}) {
+  if (apply && messageEl && getStoredView(messageEl) === "original") return "skip";
 
   const text = extractMessageText(target.el);
-  if (!text) return false;
+  if (!text) return "skip";
 
   const record = messageEl ? getStateRecord(messageEl) : null;
   const cached =
     getCachedTranslation(target.el, text) ||
-    (record?.cache?.has(text) ? record.cache.get(text) : null);
+    (record?.cache?.has(text) ? record.cache.get(text) : null) ||
+    (messageEl ? getMemoryCachedTranslation(messageEl, text) : null);
   if (cached) {
-    if (messageEl && getStoredView(messageEl) === "original") return false;
+    if (apply && messageEl && getStoredView(messageEl) === "original") return "skip";
     setCachedTranslation(target.el, text, cached);
     if (messageEl) rememberTranslation(messageEl, text, cached);
-    applyInlineText(target.el, cached);
-    return getStoredView(messageEl) !== "original";
+    if (apply) applyInlineText(target.el, cached);
+    return "translated";
   }
 
   const result = await translateText(text, settings.incoming, "auto");
-  if (messageEl && getStoredView(messageEl) === "original") return false;
+  if (apply && messageEl && getStoredView(messageEl) === "original") return "skip";
   if (translationUnchanged(result, text, settings.incoming)) {
-    restoreOriginal(target.el);
+    if (apply) restoreOriginal(target.el);
     clearCachedTranslation(target.el);
-    return false;
+    return "same";
   }
 
   setCachedTranslation(target.el, text, result.text);
   if (messageEl) rememberTranslation(messageEl, text, result.text);
-  applyInlineText(target.el, result.text);
-  return getStoredView(messageEl) !== "original";
+  if (apply) applyInlineText(target.el, result.text);
+  return "translated";
 }
 
 async function processIncomingMessage(
   messageEl,
   settings,
   getSettingsSnapshot,
-  { showLoading = false } = {}
+  { showLoading = false, prefetch = false } = {}
 ) {
   if (!settings.enabled) return;
 
   const key = messageKey(messageEl);
   if (!key) return;
+  if (isRateLimitedFor(messageEl, key)) return;
 
   const targets = collectTranslateTargets(messageEl);
   if (!targets.length) return;
@@ -511,10 +586,10 @@ async function processIncomingMessage(
 
   messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, `pending:${key}`);
 
-  if (showLoading) {
+  if (showLoading && !prefetch) {
     for (const target of targets) {
       const text = extractMessageText(target.el);
-      if (!getCachedTranslation(target.el, text)) {
+      if (!getCachedTranslation(target.el, text) && !getMemoryCachedTranslation(messageEl, text)) {
         showLoadingInline(target.el);
       }
     }
@@ -523,10 +598,13 @@ async function processIncomingMessage(
   let rateLimited = false;
   let lastError = "";
   let translated = false;
+  let sameLanguage = false;
 
   for (const target of targets) {
     try {
-      if (await translateTarget(target, settings, messageEl)) translated = true;
+      const result = await translateTarget(target, settings, messageEl, { apply: !prefetch });
+      if (result === "translated") translated = true;
+      if (result === "same") sameLanguage = true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       lastError = msg;
@@ -537,7 +615,7 @@ async function processIncomingMessage(
     }
   }
 
-  if (getStoredView(messageEl) === "original") {
+  if (!prefetch && getStoredView(messageEl) === "original") {
     restoreMessage(messageEl);
     ensureTranslateButton(messageEl, getSettingsSnapshot);
     return;
@@ -546,7 +624,7 @@ async function processIncomingMessage(
   if (messageKey(messageEl) !== key) return;
 
   if (rateLimited) {
-    restoreMessage(messageEl);
+    if (!prefetch) restoreMessage(messageEl);
     setViewState(messageEl, "original");
     const until = Date.now() + 30_000;
     messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, `limited:${key}:${until}`);
@@ -555,21 +633,44 @@ async function processIncomingMessage(
   }
 
   if (lastError && !translated) {
-    restoreMessage(messageEl);
-    setViewState(messageEl, "original");
-    if (showLoading) {
-      const main = findMessageContent(messageEl) || targets[0]?.el;
-      if (main) {
-        applyInlineText(main, `Translation error: ${lastError}`);
-        main.classList.add("denizen-inline-error");
+    if (!prefetch) {
+      restoreMessage(messageEl);
+      setViewState(messageEl, "original");
+      if (showLoading) {
+        const main = findMessageContent(messageEl) || targets[0]?.el;
+        if (main) {
+          applyInlineText(main, `Translation error: ${lastError}`);
+          main.classList.add("denizen-inline-error");
+        }
       }
     }
+    messageEl.removeAttribute(DENIZEN_ATTR.PROCESSED);
+    ensureTranslateButton(messageEl, getSettingsSnapshot);
+    return;
+  }
+
+  if (!translated && sameLanguage) {
+    if (!prefetch) restoreMessage(messageEl);
+    markSameLanguage(messageEl);
+    setViewState(messageEl, "original");
     messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, key);
     ensureTranslateButton(messageEl, getSettingsSnapshot);
     return;
   }
 
+  if (prefetch) {
+    if (translated) {
+      markTranslationReady(messageEl);
+      messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, key);
+    } else {
+      messageEl.removeAttribute(DENIZEN_ATTR.PROCESSED);
+    }
+    ensureTranslateButton(messageEl, getSettingsSnapshot);
+    return;
+  }
+
   setViewState(messageEl, translated ? "translated" : "original");
+  if (translated) markTranslationReady(messageEl);
   messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, key);
   ensureTranslateButton(messageEl, getSettingsSnapshot);
 }
@@ -584,9 +685,11 @@ async function handleTranslateClick(messageEl, getSettingsSnapshot) {
   if (!key) return;
 
   if (isRateLimitedFor(messageEl, key)) {
-    setTranslateButtonLabel(messageEl, "Wait…");
+    setTranslateButtonLabel(messageEl, "wait", settings);
     return;
   }
+
+  if (isSameLanguageMessage(messageEl)) return;
 
   if (getViewState(messageEl) === "translated") {
     resetMessageToOriginal(messageEl);
@@ -605,7 +708,7 @@ async function handleTranslateClick(messageEl, getSettingsSnapshot) {
     return;
   }
 
-  setTranslateButtonLabel(messageEl, "…");
+  setTranslateButtonLabel(messageEl, "busy", settings);
   await processIncomingMessage(messageEl, settings, getSettingsSnapshot, { showLoading: true });
 }
 
@@ -669,6 +772,98 @@ function collectMessageElements() {
 
 function startMessageObserver(getSettingsSnapshot) {
   let scanTimer = 0;
+  const queuedKeys = new Set();
+  const inFlightKeys = new Set();
+  const prefetchWaiters = [];
+  let prefetchRunning = 0;
+  const PREFETCH_PARALLEL = 1;
+
+  async function prefetchMessage(messageEl) {
+    const settings = getSettingsSnapshot();
+    if (!settings?.enabled) return;
+
+    const live = findLiveMessageEl(messageEl) || messageEl;
+    const key = messageKey(live);
+    if (!key) return;
+
+    if (isSameLanguageMessage(live)) {
+      ensureTranslateButton(live, getSettingsSnapshot);
+      return;
+    }
+
+    if (isTranslationReady(live) || messageHasCachedTranslation(live)) {
+      markTranslationReady(live);
+      ensureTranslateButton(live, getSettingsSnapshot);
+      return;
+    }
+
+    if (isRateLimitedFor(live, key) || isPendingFor(live, key)) return;
+
+    inFlightKeys.add(key);
+    try {
+      await processIncomingMessage(live, settings, getSettingsSnapshot, {
+        showLoading: false,
+        prefetch: true,
+      });
+    } catch (err) {
+      console.warn("[Denizen] prefetch failed:", err);
+    } finally {
+      inFlightKeys.delete(key);
+      queuedKeys.delete(key);
+    }
+  }
+
+  function pumpPrefetch() {
+    while (prefetchRunning < PREFETCH_PARALLEL && prefetchWaiters.length) {
+      const el = prefetchWaiters.shift();
+      const key = messageKey(el);
+      if (!key || inFlightKeys.has(key)) {
+        queuedKeys.delete(key);
+        continue;
+      }
+      prefetchRunning += 1;
+      prefetchMessage(el).finally(() => {
+        prefetchRunning -= 1;
+        pumpPrefetch();
+      });
+    }
+  }
+
+  function enqueuePrefetch(messageEl) {
+    const settings = getSettingsSnapshot();
+    if (!settings?.enabled) return;
+
+    const live = findLiveMessageEl(messageEl) || messageEl;
+    const key = messageKey(live);
+    if (!key) return;
+
+    if (isSameLanguageMessage(live)) {
+      ensureTranslateButton(live, getSettingsSnapshot);
+      return;
+    }
+
+    if (isTranslationReady(live) || messageHasCachedTranslation(live)) {
+      markTranslationReady(live);
+      ensureTranslateButton(live, getSettingsSnapshot);
+      return;
+    }
+
+    if (queuedKeys.has(key) || inFlightKeys.has(key)) return;
+    if (isRateLimitedFor(live, key)) return;
+
+    queuedKeys.add(key);
+    prefetchWaiters.push(live);
+    pumpPrefetch();
+  }
+
+  const visibilityObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) enqueuePrefetch(entry.target);
+      }
+    },
+    { root: null, rootMargin: "240px 0px", threshold: 0 }
+  );
 
   function syncMessages() {
     const settings = getSettingsSnapshot();
@@ -678,7 +873,26 @@ function startMessageObserver(getSettingsSnapshot) {
     }
 
     for (const el of collectMessageElements()) {
-      ensureTranslateButton(el, getSettingsSnapshot);
+      visibilityObserver.observe(el);
+
+      if (isSameLanguageMessage(el)) {
+        getTranslateWrap(el)?.remove();
+        continue;
+      }
+
+      if (isTranslationReady(el) || messageHasCachedTranslation(el)) {
+        markTranslationReady(el);
+        ensureTranslateButton(el, getSettingsSnapshot);
+        continue;
+      }
+
+      getTranslateWrap(el)?.remove();
+
+      const rect = el.getBoundingClientRect();
+      const inView =
+        rect.bottom > -240 &&
+        rect.top < (window.innerHeight || document.documentElement.clientHeight) + 240;
+      if (inView) enqueuePrefetch(el);
     }
   }
 
@@ -705,7 +919,7 @@ function startMessageObserver(getSettingsSnapshot) {
     subtree: true,
   });
 
-  const intervalId = window.setInterval(syncMessages, 3000);
+  window.setInterval(syncMessages, 3000);
   syncMessages();
 }
 

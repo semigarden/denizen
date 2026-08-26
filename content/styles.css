@@ -14,20 +14,60 @@
   vertical-align: middle;
 }
 
-.denizen-translate-btn,
+.denizen-translate-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: content-box;
+  height: auto;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted, #949ba4);
+  font: 400 0.8125rem/1.25 var(--font-primary, "gg sans", "Noto Sans", "Helvetica Neue", Helvetica, Arial, sans-serif);
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
+  transition: color 0.2s ease, opacity 0.2s ease;
+}
+
+.denizen-translate-wrap--with-reactions .denizen-translate-btn {
+  margin-inline-start: 0.25rem;
+}
+
+.denizen-translate-btn:hover {
+  color: var(--text-muted, #949ba4);
+  text-decoration: underline;
+}
+
+.denizen-translate-btn:active,
+.denizen-translate-btn.denizen-btn--active {
+  color: var(--text-muted, #949ba4);
+  text-decoration: none;
+}
+
+.denizen-translate-btn.denizen-btn--active:hover {
+  text-decoration: underline;
+}
+
+.denizen-translate-btn.denizen-btn--busy {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 .denizen-draft-translate-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   box-sizing: content-box;
   height: 1.125rem;
-  margin-inline: 0.25rem;
-  margin-inline-start: 0;
-  margin-bottom: 0.25rem;
+  margin: 0 0 0 2px;
   padding: 0.3125rem 0.4375rem;
   border: 0.0625rem solid transparent;
   border-radius: 0.5rem;
-  background-color: var(--reaction-background-default, #2b2d31);
+  background-color: transparent;
   color: #9d9ea5;
   cursor: pointer;
   pointer-events: auto;
@@ -38,58 +78,30 @@
     opacity 0.2s ease;
 }
 
-.denizen-draft-translate-wrap .denizen-draft-translate-btn {
-  margin: 0 0 0 2px;
-  border-color: transparent;
-  background-color: transparent;
-}
-
-.denizen-draft-translate-wrap .denizen-draft-translate-btn:hover {
+.denizen-draft-translate-btn:hover {
   background-color: var(--reaction-background-hover);
   border-color: transparent;
   color: #dbdee1;
 }
 
-.denizen-draft-translate-wrap .denizen-draft-translate-btn:active {
+.denizen-draft-translate-btn:active {
   background-color: var(--reaction-background-active);
   border-color: transparent;
   color: #fff;
 }
 
-.denizen-draft-translate-wrap .denizen-draft-translate-btn.denizen-btn--active {
+.denizen-draft-translate-btn.denizen-btn--active {
   background-color: transparent;
   border-color: transparent;
   color: #b6f5de;
 }
 
-.denizen-draft-translate-wrap .denizen-draft-translate-btn.denizen-btn--active:hover {
+.denizen-draft-translate-btn.denizen-btn--active:hover {
   background-color: var(--reaction-background-hover);
   border-color: transparent;
   color: #d6fff0;
 }
 
-.denizen-translate-wrap--with-reactions .denizen-translate-btn {
-  margin-inline-start: 0.25rem;
-}
-
-.denizen-translate-btn:hover,
-.denizen-draft-translate-btn:hover {
-  background-color: var(--reaction-background-hover);
-  border-color: var(--reaction-border-hover);
-}
-
-.denizen-translate-btn:active,
-.denizen-draft-translate-btn:active {
-  background-color: var(--reaction-background-active);
-  border-color: var(--reaction-border-active);
-}
-
-.denizen-translate-btn.denizen-btn--active,
-.denizen-draft-translate-btn.denizen-btn--active {
-  color: #b6f5de;
-}
-
-.denizen-translate-btn.denizen-btn--busy,
 .denizen-draft-translate-btn.denizen-btn--busy {
   opacity: 0.55;
   pointer-events: none;

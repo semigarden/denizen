@@ -50,6 +50,21 @@ function translationUnchanged(result, text, language) {
   return sameLanguage(result.detectedFrom, language) || result.text.trim() === text.trim();
 }
 
+function languageLabel(code) {
+  const raw = String(code || "").trim();
+  if (!raw || raw.toLowerCase() === "auto") return "";
+  try {
+    const name = new Intl.DisplayNames(["en"], { type: "language" }).of(raw);
+    if (name) return name;
+  } catch {}
+  try {
+    const base = raw.split("-")[0];
+    const name = new Intl.DisplayNames(["en"], { type: "language" }).of(base);
+    if (name) return name;
+  } catch {}
+  return raw;
+}
+
 function denizenIconSvg() {
   return (
     '<svg class="denizen-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
