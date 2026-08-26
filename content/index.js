@@ -1,7 +1,7 @@
 (() => {
   if (window !== window.top) return;
-  if (window.__denizenBooted) return;
-  window.__denizenBooted = true;
+  if (window.__discordTranslateBooted) return;
+  window.__discordTranslateBooted = true;
 
   let settings = null;
 
@@ -17,13 +17,13 @@
       const composer = startComposerController(getSettingsSnapshot);
 
       browser.storage.onChanged.addListener((changes, area) => {
-        if (area !== "local" || !changes.denizenSettings) return;
-        settings = { ...settings, ...changes.denizenSettings.newValue };
+        if (area !== "local" || !changes.discordTranslateSettings) return;
+        settings = { ...settings, ...changes.discordTranslateSettings.newValue };
         resetIncomingTranslations();
         composer.onSettingsChanged();
       });
     } catch (err) {
-      console.warn("[Denizen] boot failed:", err);
+      console.warn("[Discord Translate] boot failed:", err);
       settings = { enabled: false };
     }
   }

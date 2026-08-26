@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Denizen",
+  "name": "Discord Translate",
   "version": "1.0.0",
-  "description": "Firefox extension for translating Discord messages",
+  "description": "Translate Discord messages",
   "browser_specific_settings": {
     "gecko": {
-      "id": "denizen@local.dev",
+      "id": "discord-translate@local.dev",
       "strict_min_version": "140.0",
       "data_collection_permissions": {
         "required": ["websiteContent", "personalCommunications"]
@@ -45,7 +45,7 @@
     }
   ],
   "action": {
-    "default_title": "Denizen",
+    "default_title": "Discord Translate",
     "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "icons/icon-16.png",

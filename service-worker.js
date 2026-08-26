@@ -2,7 +2,7 @@ import { MSG, toApiLang } from "./settings.js";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const CACHE_MAX = 500;
-const CACHE_STORAGE_KEY = "denizenTranslateCache";
+const CACHE_STORAGE_KEY = "discordTranslateCache";
 const FETCH_TIMEOUT_MS = 8000;
 const MIN_GAP_MS = 600;
 const MAX_RETRIES = 3;

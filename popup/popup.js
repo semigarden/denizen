@@ -78,7 +78,7 @@ function createLanguagePicker({ search, list, combobox, settingKey, optionIdPref
     try {
       await saveSettings({ [settingKey]: code });
     } catch (err) {
-      console.warn(`[Denizen] could not save ${settingKey}:`, err);
+      console.warn(`[Discord Translate] could not save ${settingKey}:`, err);
     }
   }
 
@@ -184,5 +184,5 @@ getSettings()
     enabledToggle.checked = Boolean(settings.enabled);
   })
   .catch((err) => {
-    console.warn("[Denizen] could not load settings:", err);
+    console.warn("[Discord Translate] could not load settings:", err);
   });

@@ -1,5 +1,5 @@
-const DENIZEN_ATTR = {
-  PROCESSED: "data-denizen-processed",
+const DISCORD_TRANSLATE_ATTR = {
+  PROCESSED: "data-discord-translate-processed",
 };
 
 const DEFAULT_SETTINGS = {
@@ -8,7 +8,7 @@ const DEFAULT_SETTINGS = {
   outgoing: "ru",
 };
 
-const SETTINGS_STORAGE_KEY = "denizenSettings";
+const SETTINGS_STORAGE_KEY = "discordTranslateSettings";
 
 async function getSettings() {
   const stored = await browser.storage.local.get(SETTINGS_STORAGE_KEY);
@@ -25,7 +25,7 @@ async function getSettings() {
 async function translateText(text, to, from = "auto") {
   const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const res = await browser.runtime.sendMessage({
-    type: "denizen:translate",
+    type: "discord-translate:translate",
     requestId,
     text,
     from,
@@ -65,9 +65,9 @@ function languageLabel(code) {
   return raw;
 }
 
-function denizenIconSvg() {
+function discordTranslateIconSvg() {
   return (
-    '<svg class="denizen-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<svg class="discord-translate-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
     '<path d="m5 8 6 6"/>' +
     '<path d="m4 14 6-6 2-3"/>' +
     '<path d="M2 5h12"/>' +
@@ -78,38 +78,38 @@ function denizenIconSvg() {
   );
 }
 
-function ensureDenizenTooltip() {
-  let tip = document.querySelector(".denizen-tooltip");
+function ensureDiscordTranslateTooltip() {
+  let tip = document.querySelector(".discord-translate-tooltip");
   if (tip) return tip;
 
   tip = document.createElement("div");
-  tip.className = "denizen-tooltip denizen-tooltip--top";
+  tip.className = "discord-translate-tooltip discord-translate-tooltip--top";
   tip.setAttribute("role", "tooltip");
   tip.hidden = true;
   tip.innerHTML =
-    '<div class="denizen-tooltip-pointer"></div>' +
-    '<div class="denizen-tooltip-content"></div>';
+    '<div class="discord-translate-tooltip-pointer"></div>' +
+    '<div class="discord-translate-tooltip-content"></div>';
   (document.body || document.documentElement).appendChild(tip);
   return tip;
 }
 
-function hideDenizenTooltip() {
-  const tip = document.querySelector(".denizen-tooltip");
+function hideDiscordTranslateTooltip() {
+  const tip = document.querySelector(".discord-translate-tooltip");
   if (!tip) return;
   tip.hidden = true;
-  tip.classList.remove("denizen-tooltip--visible");
+  tip.classList.remove("discord-translate-tooltip--visible");
 }
 
-function showDenizenTooltip(anchor, label) {
+function showDiscordTranslateTooltip(anchor, label) {
   if (!anchor || !label) return;
-  const tip = ensureDenizenTooltip();
-  const content = tip.querySelector(".denizen-tooltip-content");
+  const tip = ensureDiscordTranslateTooltip();
+  const content = tip.querySelector(".discord-translate-tooltip-content");
   if (content) content.textContent = label;
 
   tip.hidden = false;
   tip.style.left = "0px";
   tip.style.top = "0px";
-  tip.classList.add("denizen-tooltip--visible");
+  tip.classList.add("discord-translate-tooltip--visible");
 
   const rect = anchor.getBoundingClientRect();
   const tipRect = tip.getBoundingClientRect();
@@ -119,9 +119,9 @@ function showDenizenTooltip(anchor, label) {
   tip.style.top = `${Math.max(4, top)}px`;
 }
 
-function bindDenizenTooltip(btn) {
-  if (!btn || btn.dataset.denizenTooltipBound) return;
-  btn.dataset.denizenTooltipBound = "1";
+function bindDiscordTranslateTooltip(btn) {
+  if (!btn || btn.dataset.discordTranslateTooltipBound) return;
+  btn.dataset.discordTranslateTooltipBound = "1";
 
   let showTimer = 0;
 
@@ -129,7 +129,7 @@ function bindDenizenTooltip(btn) {
     if (showTimer) window.clearTimeout(showTimer);
     showTimer = window.setTimeout(() => {
       showTimer = 0;
-      showDenizenTooltip(btn, btn.getAttribute("aria-label") || "");
+      showDiscordTranslateTooltip(btn, btn.getAttribute("aria-label") || "");
     }, 300);
   };
 
@@ -138,7 +138,7 @@ function bindDenizenTooltip(btn) {
       window.clearTimeout(showTimer);
       showTimer = 0;
     }
-    hideDenizenTooltip();
+    hideDiscordTranslateTooltip();
   };
 
   btn.addEventListener("mouseenter", scheduleShow);
@@ -148,14 +148,14 @@ function bindDenizenTooltip(btn) {
   btn.addEventListener("click", hide);
 }
 
-function setDenizenIconButton(btn, label, { active = false, busy = false } = {}) {
+function setDiscordTranslateIconButton(btn, label, { active = false, busy = false } = {}) {
   if (!btn) return;
-  if (!btn.querySelector(".denizen-icon")) {
-    btn.innerHTML = denizenIconSvg();
+  if (!btn.querySelector(".discord-translate-icon")) {
+    btn.innerHTML = discordTranslateIconSvg();
   }
   btn.setAttribute("aria-label", label);
   btn.removeAttribute("title");
-  btn.classList.toggle("denizen-btn--active", active);
-  btn.classList.toggle("denizen-btn--busy", busy);
-  bindDenizenTooltip(btn);
+  btn.classList.toggle("discord-translate-btn--active", active);
+  btn.classList.toggle("discord-translate-btn--busy", busy);
+  bindDiscordTranslateTooltip(btn);
 }

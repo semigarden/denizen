@@ -1,14 +1,14 @@
-function isDenizenUi(el) {
+function isDiscordTranslateUi(el) {
   return Boolean(
     el?.closest?.(
-      ".denizen-translate-btn, .denizen-translate-wrap, .denizen-draft-translate-btn, .denizen-draft-translate-wrap, .denizen-tooltip"
+      ".discord-translate-translate-btn, .discord-translate-translate-wrap, .discord-translate-draft-translate-btn, .discord-translate-draft-translate-wrap, .discord-translate-tooltip"
     )
   );
 }
 
 function isComposerCandidate(el) {
   if (!(el instanceof HTMLElement)) return false;
-  if (isDenizenUi(el)) return false;
+  if (isDiscordTranslateUi(el)) return false;
   if (el.getAttribute("aria-disabled") === "true") return false;
   if (el.tagName === "TEXTAREA") return true;
   if (el.tagName === "INPUT" && /^(text|search)$/i.test(el.type || "text")) return true;
@@ -130,11 +130,11 @@ function setComposerText(composer, text) {
 }
 
 function getDraftTranslateWrap() {
-  return document.querySelector(".denizen-draft-translate-wrap");
+  return document.querySelector(".discord-translate-draft-translate-wrap");
 }
 
 function getDraftTranslateButton() {
-  return document.querySelector(".denizen-draft-translate-btn");
+  return document.querySelector(".discord-translate-draft-translate-btn");
 }
 
 function findComposerButtonsContainer(root) {
@@ -203,13 +203,13 @@ function ensureDraftTranslateButton(onClick) {
   if (!wrap || !btn) {
     wrap?.remove();
     wrap = document.createElement("span");
-    wrap.className = "denizen-draft-translate-wrap";
+    wrap.className = "discord-translate-draft-translate-wrap";
 
     btn = document.createElement("div");
-    btn.className = "denizen-draft-translate-btn";
+    btn.className = "discord-translate-draft-translate-btn";
     btn.setAttribute("role", "button");
     btn.tabIndex = 0;
-    setDenizenIconButton(btn, "Translate");
+    setDiscordTranslateIconButton(btn, "Translate");
 
     const onActivate = (event) => {
       event.preventDefault();
@@ -231,7 +231,7 @@ function ensureDraftTranslateButton(onClick) {
 function syncDraftButtonLabel(showingTranslated) {
   const btn = getDraftTranslateButton();
   if (!btn) return;
-  setDenizenIconButton(btn, showingTranslated ? "Original" : "Translate", {
+  setDiscordTranslateIconButton(btn, showingTranslated ? "Original" : "Translate", {
     active: showingTranslated,
     busy: false,
   });
@@ -239,10 +239,10 @@ function syncDraftButtonLabel(showingTranslated) {
 
 function clearDraftTranslationState(composer) {
   if (!composer) return;
-  delete composer.dataset.denizenOriginalDraft;
-  delete composer.dataset.denizenTranslatedDraft;
-  delete composer.dataset.denizenDraftTranslated;
-  composer.classList.remove("denizen-inline-error");
+  delete composer.dataset.discordTranslateOriginalDraft;
+  delete composer.dataset.discordTranslateTranslatedDraft;
+  delete composer.dataset.discordTranslateDraftTranslated;
+  composer.classList.remove("discord-translate-inline-error");
 }
 
 function startComposerController(getSettingsSnapshot) {
@@ -256,7 +256,7 @@ function startComposerController(getSettingsSnapshot) {
 
   function removeDraftButton() {
     getDraftTranslateWrap()?.remove();
-    document.querySelectorAll(".denizen-draft-translate-btn").forEach((el) => el.remove());
+    document.querySelectorAll(".discord-translate-draft-translate-btn").forEach((el) => el.remove());
   }
 
   function resetDraftState() {
@@ -273,7 +273,7 @@ function startComposerController(getSettingsSnapshot) {
   function maybeResetWhenEmpty(composer) {
     if (!draftState.showingTranslated && !draftState.original) return;
     if (getComposerText(composer)) return;
-    if (getDraftTranslateButton()?.classList.contains("denizen-btn--busy")) return;
+    if (getDraftTranslateButton()?.classList.contains("discord-translate-btn--busy")) return;
     resetDraftUi(composer);
   }
 
@@ -312,9 +312,9 @@ function startComposerController(getSettingsSnapshot) {
     draftState.original = draft;
     draftState.translated = "";
     draftState.showingTranslated = false;
-    composer.dataset.denizenOriginalDraft = draft;
+    composer.dataset.discordTranslateOriginalDraft = draft;
     setComposerText(composer, "…");
-    setDenizenIconButton(getDraftTranslateButton(), "Translating…", { busy: true });
+    setDiscordTranslateIconButton(getDraftTranslateButton(), "Translating…", { busy: true });
 
     const serial = ++requestSerial;
 
@@ -343,7 +343,7 @@ function startComposerController(getSettingsSnapshot) {
         setComposerText(composer, draft);
         clearDraftTranslationState(composer);
         resetDraftState();
-        composer.classList.add("denizen-inline-error");
+        composer.classList.add("discord-translate-inline-error");
         syncDraftUi();
         return;
       }
@@ -351,9 +351,9 @@ function startComposerController(getSettingsSnapshot) {
       draftState.original = draft;
       draftState.translated = result.text;
       draftState.showingTranslated = true;
-      composer.dataset.denizenOriginalDraft = draft;
-      composer.dataset.denizenTranslatedDraft = result.text;
-      composer.dataset.denizenDraftTranslated = "1";
+      composer.dataset.discordTranslateOriginalDraft = draft;
+      composer.dataset.discordTranslateTranslatedDraft = result.text;
+      composer.dataset.discordTranslateDraftTranslated = "1";
       setComposerText(composer, result.text);
       lastComposerText = result.text;
       syncDraftUi();
@@ -362,9 +362,9 @@ function startComposerController(getSettingsSnapshot) {
       setComposerText(composer, draft);
       clearDraftTranslationState(composer);
       resetDraftState();
-      composer.classList.add("denizen-inline-error");
+      composer.classList.add("discord-translate-inline-error");
       syncDraftUi();
-      console.warn("[Denizen] draft translate failed:", err);
+      console.warn("[Discord Translate] draft translate failed:", err);
     }
   }
 

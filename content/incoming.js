@@ -1,7 +1,7 @@
-const ORIGINAL_HTML = "data-denizen-original-html";
-const TRANSLATED = "data-denizen-translated";
-const CACHED_TEXT = "data-denizen-cached-text";
-const CACHED_SRC = "data-denizen-cached-src";
+const ORIGINAL_HTML = "data-discord-translate-original-html";
+const TRANSLATED = "data-discord-translate-translated";
+const CACHED_TEXT = "data-discord-translate-cached-text";
+const CACHED_SRC = "data-discord-translate-cached-src";
 
 const messageViewState = new Map();
 
@@ -169,8 +169,8 @@ function showCachedTranslation(messageEl) {
 
 function resetMessageToOriginal(messageEl) {
   restoreMessage(messageEl);
-  messageEl.querySelectorAll(".denizen-inline-error").forEach((el) => {
-    el.classList.remove("denizen-inline-error");
+  messageEl.querySelectorAll(".discord-translate-inline-error").forEach((el) => {
+    el.classList.remove("discord-translate-inline-error");
   });
   setViewState(messageEl, "original");
 }
@@ -188,10 +188,10 @@ function findLiveMessageEl(messageEl) {
 function extractMessageText(contentEl) {
   if (!contentEl) return "";
   const clone = contentEl.cloneNode(true);
-  clone.classList.remove("denizen-content-suppressed");
+  clone.classList.remove("discord-translate-content-suppressed");
   clone
     .querySelectorAll(
-      ".denizen-translate-btn, .denizen-translate-wrap, .denizen-inline-translation"
+      ".discord-translate-translate-btn, .discord-translate-translate-wrap, .discord-translate-inline-translation"
     )
     .forEach((n) => n.remove());
   return (clone.innerText || clone.textContent || "").trim();
@@ -211,13 +211,13 @@ function findMessageContent(messageEl) {
 
   for (const el of all) {
     if (replyRoot && replyRoot.contains(el)) continue;
-    if (el.classList.contains("denizen-inline-translation")) continue;
+    if (el.classList.contains("discord-translate-inline-translation")) continue;
     return el;
   }
 
   if (all.length) {
-    const last = all.findLast?.((el) => !el.classList.contains("denizen-inline-translation"))
-      ?? [...all].reverse().find((el) => !el.classList.contains("denizen-inline-translation"));
+    const last = all.findLast?.((el) => !el.classList.contains("discord-translate-inline-translation"))
+      ?? [...all].reverse().find((el) => !el.classList.contains("discord-translate-inline-translation"));
     if (last) return last;
   }
 
@@ -226,7 +226,7 @@ function findMessageContent(messageEl) {
     ...messageEl.querySelectorAll('[class*="markup_"], [class*="markup-"]'),
   ];
   for (const el of fallbacks) {
-    if (el.classList.contains("denizen-inline-translation")) continue;
+    if (el.classList.contains("discord-translate-inline-translation")) continue;
     if (replyRoot && replyRoot.contains(el)) continue;
     if (el.closest('[class*="repliedMessage"], [class*="replyBar"]')) continue;
     if (!extractMessageText(el)) continue;
@@ -240,9 +240,9 @@ function findReplyContent(messageEl) {
   if (!replyRoot) return null;
 
   const nested =
-    replyRoot.querySelector('[class*="repliedTextContent"]:not(.denizen-inline-translation)') ||
-    replyRoot.querySelector('[class*="repliedTextPreview"]:not(.denizen-inline-translation)') ||
-    replyRoot.querySelector('[class*="messageContent"]:not(.denizen-inline-translation)');
+    replyRoot.querySelector('[class*="repliedTextContent"]:not(.discord-translate-inline-translation)') ||
+    replyRoot.querySelector('[class*="repliedTextPreview"]:not(.discord-translate-inline-translation)') ||
+    replyRoot.querySelector('[class*="messageContent"]:not(.discord-translate-inline-translation)');
 
   if (nested && extractMessageText(nested)) return nested;
   if (extractMessageText(replyRoot)) return replyRoot;
@@ -265,7 +265,7 @@ function collectTranslateTargets(messageEl) {
 
 function isTranslated(messageEl) {
   return Boolean(
-    messageEl?.querySelector?.(`.denizen-inline-translation, [${TRANSLATED}="1"], [${ORIGINAL_HTML}], .denizen-content-suppressed`)
+    messageEl?.querySelector?.(`.discord-translate-inline-translation, [${TRANSLATED}="1"], [${ORIGINAL_HTML}], .discord-translate-content-suppressed`)
   );
 }
 
@@ -287,21 +287,21 @@ function clearCachedTranslation(contentEl) {
 
 function ensureContentTargetId(contentEl) {
   if (contentEl.id && String(contentEl.id).startsWith("message-content-")) {
-    contentEl.dataset.denizenTargetId = contentEl.id;
+    contentEl.dataset.discordTranslateTargetId = contentEl.id;
     return contentEl.id;
   }
-  if (!contentEl.dataset.denizenTargetId) {
-    contentEl.dataset.denizenTargetId = `t-${Math.random().toString(36).slice(2, 9)}`;
+  if (!contentEl.dataset.discordTranslateTargetId) {
+    contentEl.dataset.discordTranslateTargetId = `t-${Math.random().toString(36).slice(2, 9)}`;
   }
-  return contentEl.dataset.denizenTargetId;
+  return contentEl.dataset.discordTranslateTargetId;
 }
 
 function findTranslationOverlay(contentEl) {
-  const tid = contentEl.dataset.denizenTargetId;
+  const tid = contentEl.dataset.discordTranslateTargetId;
   if (!tid) return null;
   const parent = contentEl.parentElement;
   if (!parent) return null;
-  return parent.querySelector(`.denizen-inline-translation[data-denizen-for="${CSS.escape(tid)}"]`);
+  return parent.querySelector(`.discord-translate-inline-translation[data-discord-translate-for="${CSS.escape(tid)}"]`);
 }
 
 function applyInlineText(contentEl, text) {
@@ -311,30 +311,30 @@ function applyInlineText(contentEl, text) {
   const tid = ensureContentTargetId(contentEl);
   contentEl.setAttribute(TRANSLATED, "1");
   contentEl.setAttribute(ORIGINAL_HTML, "1");
-  contentEl.classList.add("denizen-content-suppressed");
+  contentEl.classList.add("discord-translate-content-suppressed");
 
   let sibling = contentEl.nextElementSibling;
-  while (sibling?.classList?.contains("denizen-inline-translation")) {
+  while (sibling?.classList?.contains("discord-translate-inline-translation")) {
     const next = sibling.nextElementSibling;
-    if (sibling.dataset.denizenFor !== tid) sibling.remove();
+    if (sibling.dataset.discordTranslateFor !== tid) sibling.remove();
     sibling = next;
   }
 
   let overlay = findTranslationOverlay(contentEl);
   if (!overlay) {
     overlay = document.createElement(contentEl.tagName || "div");
-    overlay.className = `${contentEl.className} denizen-inline-translation`.replace(
-      /\bdenizen-content-suppressed\b/g,
+    overlay.className = `${contentEl.className} discord-translate-inline-translation`.replace(
+      /\bdiscord-translate-content-suppressed\b/g,
       ""
     );
-    overlay.dataset.denizenFor = tid;
+    overlay.dataset.discordTranslateFor = tid;
     overlay.removeAttribute("id");
     overlay.setAttribute(TRANSLATED, "1");
     contentEl.insertAdjacentElement("afterend", overlay);
   }
   if (messageEl && getStoredView(messageEl) === "original") {
     overlay.remove();
-    contentEl.classList.remove("denizen-content-suppressed");
+    contentEl.classList.remove("discord-translate-content-suppressed");
     contentEl.removeAttribute(ORIGINAL_HTML);
     contentEl.removeAttribute(TRANSLATED);
     return;
@@ -349,31 +349,31 @@ function showLoadingInline(contentEl) {
 function restoreOriginal(contentEl) {
   findTranslationOverlay(contentEl)?.remove();
   let sibling = contentEl.nextElementSibling;
-  while (sibling?.classList?.contains("denizen-inline-translation")) {
+  while (sibling?.classList?.contains("discord-translate-inline-translation")) {
     const next = sibling.nextElementSibling;
     sibling.remove();
     sibling = next;
   }
-  contentEl.classList.remove("denizen-content-suppressed");
+  contentEl.classList.remove("discord-translate-content-suppressed");
   contentEl.removeAttribute(ORIGINAL_HTML);
   contentEl.removeAttribute(TRANSLATED);
 }
 
 function restoreMessage(messageEl) {
-  messageEl.querySelectorAll(".denizen-inline-translation").forEach((n) => n.remove());
-  messageEl.querySelectorAll(`[${TRANSLATED}], [${ORIGINAL_HTML}], .denizen-content-suppressed`).forEach((el) => {
-    el.classList.remove("denizen-content-suppressed");
+  messageEl.querySelectorAll(".discord-translate-inline-translation").forEach((n) => n.remove());
+  messageEl.querySelectorAll(`[${TRANSLATED}], [${ORIGINAL_HTML}], .discord-translate-content-suppressed`).forEach((el) => {
+    el.classList.remove("discord-translate-content-suppressed");
     el.removeAttribute(ORIGINAL_HTML);
     el.removeAttribute(TRANSLATED);
   });
 }
 
 function getTranslateWrap(messageEl) {
-  return messageEl.querySelector(".denizen-translate-wrap");
+  return messageEl.querySelector(".discord-translate-translate-wrap");
 }
 
 function getTranslateButton(messageEl) {
-  return messageEl.querySelector(".denizen-translate-btn");
+  return messageEl.querySelector(".discord-translate-translate-btn");
 }
 
 function setTranslateButtonLabel(messageEl, mode, settings) {
@@ -390,23 +390,23 @@ function setTranslateButtonLabel(messageEl, mode, settings) {
   btn.textContent = label;
   btn.setAttribute("aria-label", label);
   btn.removeAttribute("title");
-  btn.classList.toggle("denizen-btn--active", mode === "translated");
-  btn.classList.toggle("denizen-btn--busy", mode === "busy" || mode === "wait");
-  btn.classList.remove("denizen-btn--same");
+  btn.classList.toggle("discord-translate-btn--active", mode === "translated");
+  btn.classList.toggle("discord-translate-btn--busy", mode === "busy" || mode === "wait");
+  btn.classList.remove("discord-translate-btn--same");
 }
 
 function ensureContentSuppressedForOverlays(messageEl) {
   for (const target of collectTranslateTargets(messageEl)) {
     const overlay =
       findTranslationOverlay(target.el) ||
-      (target.el.nextElementSibling?.classList?.contains("denizen-inline-translation")
+      (target.el.nextElementSibling?.classList?.contains("discord-translate-inline-translation")
         ? target.el.nextElementSibling
         : null);
     if (!overlay) continue;
-    if (overlay.dataset.denizenFor && !target.el.dataset.denizenTargetId) {
-      target.el.dataset.denizenTargetId = overlay.dataset.denizenFor;
+    if (overlay.dataset.discordTranslateFor && !target.el.dataset.discordTranslateTargetId) {
+      target.el.dataset.discordTranslateTargetId = overlay.dataset.discordTranslateFor;
     }
-    target.el.classList.add("denizen-content-suppressed");
+    target.el.classList.add("discord-translate-content-suppressed");
     target.el.setAttribute(TRANSLATED, "1");
     target.el.setAttribute(ORIGINAL_HTML, "1");
   }
@@ -432,14 +432,14 @@ function syncTranslateButtonLabel(messageEl, settings) {
 }
 
 function removeTranslateButtons() {
-  document.querySelectorAll(".denizen-translate-wrap").forEach((el) => el.remove());
+  document.querySelectorAll(".discord-translate-translate-wrap").forEach((el) => el.remove());
 }
 
 function findReactionsContainer(messageEl) {
   const replyRoot = findReplyRoot(messageEl);
   for (const el of messageEl.querySelectorAll('[class*="reactions"]')) {
     if (replyRoot && replyRoot.contains(el)) continue;
-    if (el.closest(".denizen-translate-wrap")) continue;
+    if (el.closest(".discord-translate-translate-wrap")) continue;
     if (!el.querySelector('[class*="reaction"], [class*="emoji"]')) continue;
     return el;
   }
@@ -449,19 +449,19 @@ function findReactionsContainer(messageEl) {
 function placeTranslateButton(messageEl, wrap) {
   const reactions = findReactionsContainer(messageEl);
   if (reactions) {
-    wrap.classList.add("denizen-translate-wrap--with-reactions");
+    wrap.classList.add("discord-translate-translate-wrap--with-reactions");
     if (wrap.parentElement !== reactions || reactions.lastElementChild !== wrap) {
       reactions.appendChild(wrap);
     }
     return;
   }
 
-  wrap.classList.remove("denizen-translate-wrap--with-reactions");
+  wrap.classList.remove("discord-translate-translate-wrap--with-reactions");
   const main = findMessageContent(messageEl);
   if (!main) return;
   const overlay =
     findTranslationOverlay(main) ||
-    (main.nextElementSibling?.classList?.contains("denizen-inline-translation")
+    (main.nextElementSibling?.classList?.contains("discord-translate-inline-translation")
       ? main.nextElementSibling
       : null);
   const anchor = overlay || main;
@@ -508,10 +508,10 @@ function ensureTranslateButton(messageEl, getSettingsSnapshot) {
   if (!wrap || !btn) {
     wrap?.remove();
     wrap = document.createElement("span");
-    wrap.className = "denizen-translate-wrap";
+    wrap.className = "discord-translate-translate-wrap";
 
     btn = document.createElement("div");
-    btn.className = "denizen-translate-btn";
+    btn.className = "discord-translate-translate-btn";
     btn.setAttribute("role", "button");
     btn.tabIndex = 0;
 
@@ -584,7 +584,7 @@ async function processIncomingMessage(
   const hasText = targets.some((t) => extractMessageText(t.el));
   if (!hasText) return;
 
-  messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, `pending:${key}`);
+  messageEl.setAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED, `pending:${key}`);
 
   if (showLoading && !prefetch) {
     for (const target of targets) {
@@ -611,7 +611,7 @@ async function processIncomingMessage(
       if (msg.includes("429") || msg.includes("rate limited")) {
         rateLimited = true;
       }
-      console.warn("[Denizen] translate target failed:", err);
+      console.warn("[Discord Translate] translate target failed:", err);
     }
   }
 
@@ -627,7 +627,7 @@ async function processIncomingMessage(
     if (!prefetch) restoreMessage(messageEl);
     setViewState(messageEl, "original");
     const until = Date.now() + 30_000;
-    messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, `limited:${key}:${until}`);
+    messageEl.setAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED, `limited:${key}:${until}`);
     ensureTranslateButton(messageEl, getSettingsSnapshot);
     return;
   }
@@ -640,11 +640,11 @@ async function processIncomingMessage(
         const main = findMessageContent(messageEl) || targets[0]?.el;
         if (main) {
           applyInlineText(main, `Translation error: ${lastError}`);
-          main.classList.add("denizen-inline-error");
+          main.classList.add("discord-translate-inline-error");
         }
       }
     }
-    messageEl.removeAttribute(DENIZEN_ATTR.PROCESSED);
+    messageEl.removeAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED);
     ensureTranslateButton(messageEl, getSettingsSnapshot);
     return;
   }
@@ -653,7 +653,7 @@ async function processIncomingMessage(
     if (!prefetch) restoreMessage(messageEl);
     markSameLanguage(messageEl);
     setViewState(messageEl, "original");
-    messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, key);
+    messageEl.setAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED, key);
     ensureTranslateButton(messageEl, getSettingsSnapshot);
     return;
   }
@@ -661,9 +661,9 @@ async function processIncomingMessage(
   if (prefetch) {
     if (translated) {
       markTranslationReady(messageEl);
-      messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, key);
+      messageEl.setAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED, key);
     } else {
-      messageEl.removeAttribute(DENIZEN_ATTR.PROCESSED);
+      messageEl.removeAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED);
     }
     ensureTranslateButton(messageEl, getSettingsSnapshot);
     return;
@@ -671,7 +671,7 @@ async function processIncomingMessage(
 
   setViewState(messageEl, translated ? "translated" : "original");
   if (translated) markTranslationReady(messageEl);
-  messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, key);
+  messageEl.setAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED, key);
   ensureTranslateButton(messageEl, getSettingsSnapshot);
 }
 
@@ -693,7 +693,7 @@ async function handleTranslateClick(messageEl, getSettingsSnapshot) {
 
   if (getViewState(messageEl) === "translated") {
     resetMessageToOriginal(messageEl);
-    messageEl.removeAttribute(DENIZEN_ATTR.PROCESSED);
+    messageEl.removeAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED);
     ensureTranslateButton(messageEl, getSettingsSnapshot);
     return;
   }
@@ -703,7 +703,7 @@ async function handleTranslateClick(messageEl, getSettingsSnapshot) {
   setViewState(messageEl, "translated");
 
   if (showCachedTranslation(messageEl)) {
-    messageEl.setAttribute(DENIZEN_ATTR.PROCESSED, key);
+    messageEl.setAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED, key);
     ensureTranslateButton(messageEl, getSettingsSnapshot);
     return;
   }
@@ -713,11 +713,11 @@ async function handleTranslateClick(messageEl, getSettingsSnapshot) {
 }
 
 function isPendingFor(messageEl, key) {
-  return messageEl.getAttribute(DENIZEN_ATTR.PROCESSED) === `pending:${key}`;
+  return messageEl.getAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED) === `pending:${key}`;
 }
 
 function isRateLimitedFor(messageEl, key) {
-  const value = messageEl.getAttribute(DENIZEN_ATTR.PROCESSED) || "";
+  const value = messageEl.getAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED) || "";
   if (!value.startsWith(`limited:${key}:`)) return false;
   const until = Number(value.slice(`limited:${key}:`.length));
   return Number.isFinite(until) && Date.now() < until;
@@ -806,7 +806,7 @@ function startMessageObserver(getSettingsSnapshot) {
         prefetch: true,
       });
     } catch (err) {
-      console.warn("[Denizen] prefetch failed:", err);
+      console.warn("[Discord Translate] prefetch failed:", err);
     } finally {
       inFlightKeys.delete(key);
       queuedKeys.delete(key);
@@ -924,12 +924,12 @@ function startMessageObserver(getSettingsSnapshot) {
 }
 
 function resetIncomingTranslations() {
-  document.querySelectorAll(`[${DENIZEN_ATTR.PROCESSED}]`).forEach((el) => {
-    el.removeAttribute(DENIZEN_ATTR.PROCESSED);
+  document.querySelectorAll(`[${DISCORD_TRANSLATE_ATTR.PROCESSED}]`).forEach((el) => {
+    el.removeAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED);
   });
-  document.querySelectorAll(".denizen-inline-translation").forEach((el) => el.remove());
-  document.querySelectorAll(`[${ORIGINAL_HTML}], .denizen-content-suppressed`).forEach((el) => {
-    el.classList.remove("denizen-content-suppressed", "denizen-inline-error");
+  document.querySelectorAll(".discord-translate-inline-translation").forEach((el) => el.remove());
+  document.querySelectorAll(`[${ORIGINAL_HTML}], .discord-translate-content-suppressed`).forEach((el) => {
+    el.classList.remove("discord-translate-content-suppressed", "discord-translate-inline-error");
     el.removeAttribute(ORIGINAL_HTML);
     el.removeAttribute(TRANSLATED);
   });
@@ -938,5 +938,5 @@ function resetIncomingTranslations() {
   });
   messageViewState.clear();
   removeTranslateButtons();
-  hideDenizenTooltip();
+  hideDiscordTranslateTooltip();
 }

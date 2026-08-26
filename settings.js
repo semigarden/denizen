@@ -1,5 +1,5 @@
 export const MSG = {
-  TRANSLATE: "denizen:translate",
+  TRANSLATE: "discord-translate:translate",
 };
 
 export const TRANSLATE_LANGUAGES = [
@@ -223,7 +223,7 @@ export const DEFAULT_SETTINGS = {
   outgoing: "ru",
 };
 
-const STORAGE_KEY = "denizenSettings";
+const STORAGE_KEY = "discordTranslateSettings";
 
 export function normalizeLanguageCode(code) {
   const raw = String(code || "").trim();
