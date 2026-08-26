@@ -20,7 +20,8 @@
     "https://discord.com/*",
     "https://ptb.discord.com/*",
     "https://canary.discord.com/*",
-    "https://translate.google.com/*"
+    "https://translate.google.com/*",
+    "https://translate-pa.googleapis.com/*"
   ],
   "background": {
     "scripts": ["service-worker.js"],

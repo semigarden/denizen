@@ -100,13 +100,6 @@ function markSameLanguage(messageEl) {
   }
 }
 
-function isTranslationReady(messageEl) {
-  for (const key of collectMessageKeys(messageEl)) {
-    if (messageViewState.get(key)?.translationReady) return true;
-  }
-  return false;
-}
-
 function markTranslationReady(messageEl) {
   for (const key of collectMessageKeys(messageEl)) {
     const record = getStateRecordByKey(key);
@@ -486,16 +479,6 @@ function ensureTranslateButton(messageEl, getSettingsSnapshot) {
     markTranslationReady(messageEl);
   }
 
-  const canShow =
-    shouldShowTranslation(messageEl) ||
-    isTranslationReady(messageEl) ||
-    messageHasCachedTranslation(messageEl);
-
-  if (!canShow) {
-    getTranslateWrap(messageEl)?.remove();
-    return;
-  }
-
   const main = findMessageContent(messageEl);
   if (!main || !extractMessageText(main)) {
     getTranslateWrap(messageEl)?.remove();
@@ -570,7 +553,7 @@ async function processIncomingMessage(
   messageEl,
   settings,
   getSettingsSnapshot,
-  { showLoading = false, prefetch = false } = {}
+  { showLoading = false } = {}
 ) {
   if (!settings.enabled) return;
 
@@ -586,7 +569,7 @@ async function processIncomingMessage(
 
   messageEl.setAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED, `pending:${key}`);
 
-  if (showLoading && !prefetch) {
+  if (showLoading) {
     for (const target of targets) {
       const text = extractMessageText(target.el);
       if (!getCachedTranslation(target.el, text) && !getMemoryCachedTranslation(messageEl, text)) {
@@ -602,7 +585,7 @@ async function processIncomingMessage(
 
   for (const target of targets) {
     try {
-      const result = await translateTarget(target, settings, messageEl, { apply: !prefetch });
+      const result = await translateTarget(target, settings, messageEl, { apply: true });
       if (result === "translated") translated = true;
       if (result === "same") sameLanguage = true;
     } catch (err) {
@@ -615,7 +598,7 @@ async function processIncomingMessage(
     }
   }
 
-  if (!prefetch && getStoredView(messageEl) === "original") {
+  if (getStoredView(messageEl) === "original") {
     restoreMessage(messageEl);
     ensureTranslateButton(messageEl, getSettingsSnapshot);
     return;
@@ -624,7 +607,7 @@ async function processIncomingMessage(
   if (messageKey(messageEl) !== key) return;
 
   if (rateLimited) {
-    if (!prefetch) restoreMessage(messageEl);
+    restoreMessage(messageEl);
     setViewState(messageEl, "original");
     const until = Date.now() + 30_000;
     messageEl.setAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED, `limited:${key}:${until}`);
@@ -633,15 +616,13 @@ async function processIncomingMessage(
   }
 
   if (lastError && !translated) {
-    if (!prefetch) {
-      restoreMessage(messageEl);
-      setViewState(messageEl, "original");
-      if (showLoading) {
-        const main = findMessageContent(messageEl) || targets[0]?.el;
-        if (main) {
-          applyInlineText(main, `Translation error: ${lastError}`);
-          main.classList.add("discord-translate-inline-error");
-        }
+    restoreMessage(messageEl);
+    setViewState(messageEl, "original");
+    if (showLoading) {
+      const main = findMessageContent(messageEl) || targets[0]?.el;
+      if (main) {
+        applyInlineText(main, `Translation error: ${lastError}`);
+        main.classList.add("discord-translate-inline-error");
       }
     }
     messageEl.removeAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED);
@@ -650,21 +631,10 @@ async function processIncomingMessage(
   }
 
   if (!translated && sameLanguage) {
-    if (!prefetch) restoreMessage(messageEl);
+    restoreMessage(messageEl);
     markSameLanguage(messageEl);
     setViewState(messageEl, "original");
     messageEl.setAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED, key);
-    ensureTranslateButton(messageEl, getSettingsSnapshot);
-    return;
-  }
-
-  if (prefetch) {
-    if (translated) {
-      markTranslationReady(messageEl);
-      messageEl.setAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED, key);
-    } else {
-      messageEl.removeAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED);
-    }
     ensureTranslateButton(messageEl, getSettingsSnapshot);
     return;
   }
@@ -772,98 +742,6 @@ function collectMessageElements() {
 
 function startMessageObserver(getSettingsSnapshot) {
   let scanTimer = 0;
-  const queuedKeys = new Set();
-  const inFlightKeys = new Set();
-  const prefetchWaiters = [];
-  let prefetchRunning = 0;
-  const PREFETCH_PARALLEL = 1;
-
-  async function prefetchMessage(messageEl) {
-    const settings = getSettingsSnapshot();
-    if (!settings?.enabled) return;
-
-    const live = findLiveMessageEl(messageEl) || messageEl;
-    const key = messageKey(live);
-    if (!key) return;
-
-    if (isSameLanguageMessage(live)) {
-      ensureTranslateButton(live, getSettingsSnapshot);
-      return;
-    }
-
-    if (isTranslationReady(live) || messageHasCachedTranslation(live)) {
-      markTranslationReady(live);
-      ensureTranslateButton(live, getSettingsSnapshot);
-      return;
-    }
-
-    if (isRateLimitedFor(live, key) || isPendingFor(live, key)) return;
-
-    inFlightKeys.add(key);
-    try {
-      await processIncomingMessage(live, settings, getSettingsSnapshot, {
-        showLoading: false,
-        prefetch: true,
-      });
-    } catch (err) {
-      console.warn("[Discord Translate] prefetch failed:", err);
-    } finally {
-      inFlightKeys.delete(key);
-      queuedKeys.delete(key);
-    }
-  }
-
-  function pumpPrefetch() {
-    while (prefetchRunning < PREFETCH_PARALLEL && prefetchWaiters.length) {
-      const el = prefetchWaiters.shift();
-      const key = messageKey(el);
-      if (!key || inFlightKeys.has(key)) {
-        queuedKeys.delete(key);
-        continue;
-      }
-      prefetchRunning += 1;
-      prefetchMessage(el).finally(() => {
-        prefetchRunning -= 1;
-        pumpPrefetch();
-      });
-    }
-  }
-
-  function enqueuePrefetch(messageEl) {
-    const settings = getSettingsSnapshot();
-    if (!settings?.enabled) return;
-
-    const live = findLiveMessageEl(messageEl) || messageEl;
-    const key = messageKey(live);
-    if (!key) return;
-
-    if (isSameLanguageMessage(live)) {
-      ensureTranslateButton(live, getSettingsSnapshot);
-      return;
-    }
-
-    if (isTranslationReady(live) || messageHasCachedTranslation(live)) {
-      markTranslationReady(live);
-      ensureTranslateButton(live, getSettingsSnapshot);
-      return;
-    }
-
-    if (queuedKeys.has(key) || inFlightKeys.has(key)) return;
-    if (isRateLimitedFor(live, key)) return;
-
-    queuedKeys.add(key);
-    prefetchWaiters.push(live);
-    pumpPrefetch();
-  }
-
-  const visibilityObserver = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting) enqueuePrefetch(entry.target);
-      }
-    },
-    { root: null, rootMargin: "240px 0px", threshold: 0 }
-  );
 
   function syncMessages() {
     const settings = getSettingsSnapshot();
@@ -873,26 +751,7 @@ function startMessageObserver(getSettingsSnapshot) {
     }
 
     for (const el of collectMessageElements()) {
-      visibilityObserver.observe(el);
-
-      if (isSameLanguageMessage(el)) {
-        getTranslateWrap(el)?.remove();
-        continue;
-      }
-
-      if (isTranslationReady(el) || messageHasCachedTranslation(el)) {
-        markTranslationReady(el);
-        ensureTranslateButton(el, getSettingsSnapshot);
-        continue;
-      }
-
-      getTranslateWrap(el)?.remove();
-
-      const rect = el.getBoundingClientRect();
-      const inView =
-        rect.bottom > -240 &&
-        rect.top < (window.innerHeight || document.documentElement.clientHeight) + 240;
-      if (inView) enqueuePrefetch(el);
+      ensureTranslateButton(el, getSettingsSnapshot);
     }
   }
 

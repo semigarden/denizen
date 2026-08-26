@@ -7,6 +7,8 @@ const FETCH_TIMEOUT_MS = 8000;
 const MIN_GAP_MS = 600;
 const MAX_RETRIES = 3;
 const TRANSLATE_ORIGIN = "https://translate.google.com";
+const TRANSLATE_PA_URL = "https://translate-pa.googleapis.com/v1/translateHtml";
+const TRANSLATE_PA_KEY = "AIzaSyATBXajvzQLTDHEQbcpq0Ihe0vWDHmO520";
 
 let cache = new Map();
 let cacheLoaded = false;
@@ -107,6 +109,14 @@ function formatTranslateError(status, detail) {
 }
 
 function parseTranslateResponse(data, source) {
+  if (Array.isArray(data) && typeof data[0]?.[0] === "string") {
+    const text = data[0].filter((part) => typeof part === "string").join("");
+    if (text) {
+      const detected = data[1]?.[0] || (source !== "auto" ? source : "unknown");
+      return { text, detectedFrom: String(detected).toUpperCase() };
+    }
+  }
+
   const translated = (data?.sentences || [])
     .filter((s) => s && typeof s.trans === "string")
     .map((s) => s.trans)
@@ -146,6 +156,22 @@ async function waitForSlot() {
   lastRequestAt = Date.now();
 }
 
+async function translateViaPa(sl, tl, q) {
+  const res = await fetchWithTimeout(TRANSLATE_PA_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json+protobuf",
+      "X-Goog-API-Key": TRANSLATE_PA_KEY,
+    },
+    body: JSON.stringify([[[q], sl, tl], "wt_lib"]),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(formatTranslateError(res.status, detail));
+  }
+  return res.json();
+}
+
 async function translateViaFetch(sl, tl, q) {
   const body = new URLSearchParams({ sl, tl, q });
   const res = await fetchWithTimeout(`${TRANSLATE_ORIGIN}/translate_a/single?client=at&dt=t&dt=rm&dj=1`, {
@@ -161,6 +187,14 @@ async function translateViaFetch(sl, tl, q) {
     throw new Error(formatTranslateError(res.status, detail));
   }
   return res.json();
+}
+
+async function translateOnce(sl, tl, q) {
+  try {
+    return await translateViaPa(sl, tl, q);
+  } catch {
+    return translateViaFetch(sl, tl, q);
+  }
 }
 
 async function translateText({ text, from, to }) {
@@ -189,7 +223,7 @@ async function translateText({ text, from, to }) {
       await waitForSlot();
 
       try {
-        const data = await translateViaFetch(source, target, text);
+        const data = await translateOnce(source, target, text);
         const parsed = parseTranslateResponse(data, source);
         if (!parsed?.text) {
           lastError = "empty response";

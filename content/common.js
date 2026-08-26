@@ -65,17 +65,34 @@ function languageLabel(code) {
   return raw;
 }
 
-function discordTranslateIconSvg() {
-  return (
-    '<svg class="discord-translate-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-    '<path d="m5 8 6 6"/>' +
-    '<path d="m4 14 6-6 2-3"/>' +
-    '<path d="M2 5h12"/>' +
-    '<path d="M7 2h1"/>' +
-    '<path d="m22 22-5-10-5 10"/>' +
-    '<path d="M14 18h6"/>' +
-    "</svg>"
-  );
+function createDiscordTranslateIcon() {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "discord-translate-icon");
+  svg.setAttribute("xmlns", NS);
+  svg.setAttribute("width", "18");
+  svg.setAttribute("height", "18");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+
+  for (const d of [
+    "m5 8 6 6",
+    "m4 14 6-6 2-3",
+    "M2 5h12",
+    "M7 2h1",
+    "m22 22-5-10-5 10",
+    "M14 18h6",
+  ]) {
+    const path = document.createElementNS(NS, "path");
+    path.setAttribute("d", d);
+    svg.appendChild(path);
+  }
+  return svg;
 }
 
 function ensureDiscordTranslateTooltip() {
@@ -151,7 +168,7 @@ function bindDiscordTranslateTooltip(btn) {
 function setDiscordTranslateIconButton(btn, label, { active = false, busy = false } = {}) {
   if (!btn) return;
   if (!btn.querySelector(".discord-translate-icon")) {
-    btn.innerHTML = discordTranslateIconSvg();
+    btn.replaceChildren(createDiscordTranslateIcon());
   }
   btn.setAttribute("aria-label", label);
   btn.removeAttribute("title");
