@@ -2,6 +2,15 @@ import { filterLanguages, getSettings, languageLabel, saveSettings } from "../se
 
 const enabledToggle = document.getElementById("enabledToggle");
 
+function fitPopup() {
+  const root = document.documentElement;
+  root.style.height = "auto";
+  document.body.style.height = "auto";
+  const height = Math.ceil(document.body.getBoundingClientRect().height);
+  root.style.height = `${height}px`;
+  document.body.style.height = `${height}px`;
+}
+
 function createLanguagePicker({ search, list, combobox, settingKey, optionIdPrefix }) {
   let selectedCode = "en";
   let activeIndex = -1;
@@ -11,6 +20,7 @@ function createLanguagePicker({ search, list, combobox, settingKey, optionIdPref
   function setExpanded(open) {
     search.setAttribute("aria-expanded", open ? "true" : "false");
     combobox?.classList.toggle("is-open", open);
+    requestAnimationFrame(fitPopup);
   }
 
   function closeList(restoreLabel = true) {
@@ -182,7 +192,9 @@ getSettings()
     incomingPicker.setCode(settings.incoming);
     outgoingPicker.setCode(settings.outgoing);
     enabledToggle.checked = Boolean(settings.enabled);
+    fitPopup();
   })
   .catch((err) => {
     console.warn("[Discord Translate] could not load settings:", err);
+    fitPopup();
   });

@@ -17,7 +17,7 @@
         </label>
       </header>
       <div class="popup__field">
-        <label class="popup__label" for="incomingSearch">Incoming</label>
+        <span class="popup__label" id="incomingLabel">Incoming</span>
         <div class="lang-combobox" id="incomingCombobox">
           <input
             id="incomingSearch"
@@ -25,7 +25,7 @@
             autocomplete="off"
             spellcheck="false"
             placeholder="Search languages"
-            aria-label="Incoming language"
+            aria-labelledby="incomingLabel"
             role="combobox"
             aria-autocomplete="list"
             aria-expanded="false"
@@ -39,7 +39,7 @@
         </div>
       </div>
       <div class="popup__field">
-        <label class="popup__label" for="outgoingSearch">Outgoing</label>
+        <span class="popup__label" id="outgoingLabel">Outgoing</span>
         <div class="lang-combobox" id="outgoingCombobox">
           <input
             id="outgoingSearch"
@@ -47,7 +47,7 @@
             autocomplete="off"
             spellcheck="false"
             placeholder="Search languages"
-            aria-label="Outgoing language"
+            aria-labelledby="outgoingLabel"
             role="combobox"
             aria-autocomplete="list"
             aria-expanded="false"

@@ -220,7 +220,7 @@ export function filterLanguages(query) {
 export const DEFAULT_SETTINGS = {
   enabled: true,
   incoming: "en",
-  outgoing: "ru",
+  outgoing: "ja",
 };
 
 const STORAGE_KEY = "discordTranslateSettings";

@@ -5,7 +5,7 @@ const DISCORD_TRANSLATE_ATTR = {
 const DEFAULT_SETTINGS = {
   enabled: true,
   incoming: "en",
-  outgoing: "ru",
+  outgoing: "ja",
 };
 
 const SETTINGS_STORAGE_KEY = "discordTranslateSettings";

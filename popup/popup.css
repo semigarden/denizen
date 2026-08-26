@@ -170,22 +170,16 @@ body {
   border-color: var(--accent);
 }
 .lang-combobox__panel {
-  display: grid;
-  grid-template-rows: 0fr;
-  margin-top: 0;
-  transition:
-    grid-template-rows 180ms ease,
-    margin-top 180ms ease;
+  display: none;
+  margin-top: 8px;
 }
 
 .lang-combobox.is-open .lang-combobox__panel {
-  grid-template-rows: 1fr;
-  margin-top: 8px;
+  display: block;
 }
 
 .lang-combobox__panel-inner {
   min-height: 0;
-  overflow: hidden;
 }
 
 .lang-combobox__list {
@@ -197,9 +191,6 @@ body {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-secondary);
-  opacity: 0;
-  transition: opacity 140ms ease;
-  pointer-events: none;
   scrollbar-width: thin;
   scrollbar-color: #1a1b1e transparent;
 }
@@ -218,11 +209,6 @@ body {
   border-radius: 4px;
   border: 2px solid transparent;
   background-clip: padding-box;
-}
-
-.lang-combobox.is-open .lang-combobox__list {
-  opacity: 1;
-  pointer-events: auto;
 }
 
 .lang-combobox__option,
