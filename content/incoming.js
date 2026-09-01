@@ -5,6 +5,12 @@ const CACHED_SRC = "data-discord-translate-cached-src";
 
 const messageViewState = new Map();
 
+function isReplyPreviewContent(el) {
+  if (!el) return false;
+  if (el.matches?.('[class*="repliedTextContent"], [class*="repliedTextPreview"]')) return true;
+  return Boolean(el.closest?.('[class*="repliedTextPreview"], [class*="repliedTextContent"]'));
+}
+
 function collectMessageKeys(messageEl) {
   const keys = [];
   if (!messageEl) return keys;
@@ -13,16 +19,22 @@ function collectMessageKeys(messageEl) {
     if (key && !keys.includes(key)) keys.push(key);
   }
 
-  add(messageEl.id);
+  if (!isReplyPreviewContent(messageEl)) {
+    add(messageEl.id);
+  }
   add(messageEl.getAttribute?.("data-list-item-id") || "");
 
-  const content =
-    (messageEl.id && String(messageEl.id).startsWith("message-content-") && messageEl) ||
-    messageEl.querySelector?.('[id^="message-content-"]');
-  add(content?.id || "");
-
   for (const el of messageEl.querySelectorAll?.('[id^="message-content-"]') || []) {
+    if (isReplyPreviewContent(el)) continue;
     add(el.id);
+  }
+
+  if (
+    messageEl.id &&
+    String(messageEl.id).startsWith("message-content-") &&
+    !isReplyPreviewContent(messageEl)
+  ) {
+    add(messageEl.id);
   }
 
   return keys;
@@ -110,7 +122,7 @@ function markTranslationReady(messageEl) {
 
 function messageHasCachedTranslation(messageEl) {
   for (const target of collectTranslateTargets(messageEl)) {
-    const text = extractMessageText(target.el);
+    const text = extractTargetText(target.el);
     if (!text) continue;
     if (getCachedTranslation(target.el, text) || getMemoryCachedTranslation(messageEl, text)) {
       return true;
@@ -136,7 +148,6 @@ function getMemoryCachedTranslation(messageEl, srcText) {
     for (const [src, dst] of record.cache.entries()) {
       if (src.trim() === trimmed) return dst;
     }
-    if (record.cache.size === 1) return record.cache.values().next().value;
   }
   return null;
 }
@@ -147,7 +158,7 @@ function showCachedTranslation(messageEl) {
   let applied = false;
   for (const target of targets) {
     if (!shouldShowTranslation(messageEl)) return applied;
-    const text = extractMessageText(target.el);
+    const text = extractTargetText(target.el);
     if (!text) continue;
     const cached =
       getCachedTranslation(target.el, text) || getMemoryCachedTranslation(messageEl, text);
@@ -190,56 +201,123 @@ function extractMessageText(contentEl) {
   return (clone.innerText || clone.textContent || "").trim();
 }
 
+function isReplyContext(el) {
+  if (!el) return false;
+  const cls = typeof el.className === "string" ? el.className : "";
+  if (/repliedTextContent|repliedTextPreview|repliedMessage|referencedMessage|replyBar/.test(cls)) {
+    return true;
+  }
+  return Boolean(
+    el.closest?.(
+      '[class*="repliedMessage"], [class*="referencedMessage"], [class*="replyBar"], [class*="repliedTextPreview"], [class*="repliedTextContent"]'
+    )
+  );
+}
+
 function findReplyRoot(messageEl) {
   return (
-    messageEl.querySelector('[class*="repliedMessage"]') ||
-    messageEl.querySelector('[class*="replyBar"]') ||
-    null
+    messageEl.querySelector('[class*="repliedMessage"], [class*="referencedMessage"]') ||
+    messageEl.querySelector('[class*="repliedTextPreview"]')
   );
 }
 
 function findMessageContent(messageEl) {
+  const contents = messageEl.querySelector('[class*="contents"]') || messageEl;
   const replyRoot = findReplyRoot(messageEl);
-  const all = [...messageEl.querySelectorAll('[id^="message-content-"]')];
 
+  const all = [...contents.querySelectorAll('[id^="message-content-"]')];
   for (const el of all) {
+    if (el.matches?.('[class*="repliedTextContent"], [class*="repliedTextPreview"]')) continue;
     if (replyRoot && replyRoot.contains(el)) continue;
+    if (isReplyContext(el)) continue;
     if (el.classList.contains("discord-translate-inline-translation")) continue;
     return el;
   }
 
   if (all.length) {
-    const last = all.findLast?.((el) => !el.classList.contains("discord-translate-inline-translation"))
-      ?? [...all].reverse().find((el) => !el.classList.contains("discord-translate-inline-translation"));
-    if (last) return last;
+    const last =
+      all.findLast?.((el) => !el.classList.contains("discord-translate-inline-translation")) ??
+      [...all].reverse().find((el) => !el.classList.contains("discord-translate-inline-translation"));
+    if (
+      last &&
+      !last.matches?.('[class*="repliedTextContent"], [class*="repliedTextPreview"]') &&
+      !(replyRoot && replyRoot.contains(last)) &&
+      !isReplyContext(last)
+    ) {
+      return last;
+    }
   }
 
   const fallbacks = [
-    ...messageEl.querySelectorAll('[class*="messageContent"]'),
-    ...messageEl.querySelectorAll('[class*="markup_"], [class*="markup-"]'),
+    ...contents.querySelectorAll('[class*="messageContent"]'),
+    ...contents.querySelectorAll('[class*="markup_"], [class*="markup-"]'),
   ];
   for (const el of fallbacks) {
+    if (el.matches?.('[class*="repliedTextContent"], [class*="repliedTextPreview"]')) continue;
     if (el.classList.contains("discord-translate-inline-translation")) continue;
     if (replyRoot && replyRoot.contains(el)) continue;
-    if (el.closest('[class*="repliedMessage"], [class*="replyBar"]')) continue;
+    if (isReplyContext(el)) continue;
     if (!extractMessageText(el)) continue;
     return el;
   }
+
+  for (const el of messageEl.querySelectorAll('[id^="message-content-"]')) {
+    if (el.matches?.('[class*="repliedTextContent"], [class*="repliedTextPreview"]')) continue;
+    if (isReplyContext(el)) continue;
+    if (el.classList.contains("discord-translate-inline-translation")) continue;
+    if (!extractMessageText(el)) continue;
+    return el;
+  }
+
   return null;
 }
 
 function findReplyContent(messageEl) {
-  const replyRoot = findReplyRoot(messageEl);
-  if (!replyRoot) return null;
+  if (!messageEl) return null;
 
-  const nested =
-    replyRoot.querySelector('[class*="repliedTextContent"]:not(.discord-translate-inline-translation)') ||
-    replyRoot.querySelector('[class*="repliedTextPreview"]:not(.discord-translate-inline-translation)') ||
-    replyRoot.querySelector('[class*="messageContent"]:not(.discord-translate-inline-translation)');
+  const textEl = messageEl.querySelector(
+    '[class*="repliedTextContent"]:not(.discord-translate-inline-translation)'
+  );
+  if (textEl && extractReplyText(textEl)) return textEl;
 
-  if (nested && extractMessageText(nested)) return nested;
-  if (extractMessageText(replyRoot)) return replyRoot;
+  const preview = messageEl.querySelector(
+    '[class*="repliedTextPreview"]:not(.discord-translate-inline-translation)'
+  );
+  if (preview && extractReplyText(preview)) {
+    return preview.querySelector('[class*="repliedTextContent"]') || preview;
+  }
+
   return null;
+}
+
+function getReplyMessageSpan(textEl) {
+  if (!textEl) return null;
+  for (const span of textEl.querySelectorAll(":scope > span")) {
+    if (span.matches?.('[class*="timestamp"], [class*="hiddenVisually"]')) continue;
+    if (span.querySelector?.("time")) continue;
+    const text = (span.textContent || "").trim();
+    if (text) return span;
+  }
+  return null;
+}
+
+function extractReplyText(contentEl) {
+  if (!contentEl) return "";
+  const clone = contentEl.cloneNode(true);
+  clone.classList.remove("discord-translate-content-suppressed");
+  clone
+    .querySelectorAll(
+      ".discord-translate-inline-translation, [class*='timestamp'], [class*='hiddenVisually'], time"
+    )
+    .forEach((n) => n.remove());
+  const messageSpan = getReplyMessageSpan(clone);
+  if (messageSpan) return (messageSpan.textContent || "").trim();
+  return (clone.textContent || clone.innerText || "").trim();
+}
+
+function extractTargetText(contentEl) {
+  if (isReplyPreviewContent(contentEl)) return extractReplyText(contentEl);
+  return extractMessageText(contentEl);
 }
 
 function collectTranslateTargets(messageEl) {
@@ -279,6 +357,12 @@ function clearCachedTranslation(contentEl) {
 }
 
 function ensureContentTargetId(contentEl) {
+  if (isReplyPreviewContent(contentEl)) {
+    if (!contentEl.dataset.discordTranslateTargetId) {
+      contentEl.dataset.discordTranslateTargetId = `reply-${contentEl.id || Math.random().toString(36).slice(2, 9)}`;
+    }
+    return contentEl.dataset.discordTranslateTargetId;
+  }
   if (contentEl.id && String(contentEl.id).startsWith("message-content-")) {
     contentEl.dataset.discordTranslateTargetId = contentEl.id;
     return contentEl.id;
@@ -301,35 +385,43 @@ function applyInlineText(contentEl, text) {
   const messageEl = findMessageRoot(contentEl);
   if (messageEl && getStoredView(messageEl) === "original") return;
 
-  const tid = ensureContentTargetId(contentEl);
-  contentEl.setAttribute(TRANSLATED, "1");
-  contentEl.setAttribute(ORIGINAL_HTML, "1");
-  contentEl.classList.add("discord-translate-content-suppressed");
+  const hideEl =
+    contentEl.closest?.('[class*="repliedTextContent"]') ||
+    (isReplyPreviewContent(contentEl) ? contentEl : contentEl);
 
-  let sibling = contentEl.nextElementSibling;
+  const tid = ensureContentTargetId(hideEl);
+  hideEl.setAttribute(TRANSLATED, "1");
+  hideEl.setAttribute(ORIGINAL_HTML, "1");
+  hideEl.classList.add("discord-translate-content-suppressed");
+  hideEl.hidden = true;
+  hideEl.style.setProperty("display", "none", "important");
+
+  let sibling = hideEl.nextElementSibling;
   while (sibling?.classList?.contains("discord-translate-inline-translation")) {
     const next = sibling.nextElementSibling;
     if (sibling.dataset.discordTranslateFor !== tid) sibling.remove();
     sibling = next;
   }
 
-  let overlay = findTranslationOverlay(contentEl);
+  let overlay = findTranslationOverlay(hideEl);
   if (!overlay) {
-    overlay = document.createElement(contentEl.tagName || "div");
-    overlay.className = `${contentEl.className} discord-translate-inline-translation`.replace(
+    overlay = document.createElement(hideEl.tagName || "div");
+    overlay.className = `${hideEl.className} discord-translate-inline-translation`.replace(
       /\bdiscord-translate-content-suppressed\b/g,
       ""
     );
     overlay.dataset.discordTranslateFor = tid;
     overlay.removeAttribute("id");
     overlay.setAttribute(TRANSLATED, "1");
-    contentEl.insertAdjacentElement("afterend", overlay);
+    hideEl.insertAdjacentElement("afterend", overlay);
   }
   if (messageEl && getStoredView(messageEl) === "original") {
     overlay.remove();
-    contentEl.classList.remove("discord-translate-content-suppressed");
-    contentEl.removeAttribute(ORIGINAL_HTML);
-    contentEl.removeAttribute(TRANSLATED);
+    hideEl.classList.remove("discord-translate-content-suppressed");
+    hideEl.hidden = false;
+    hideEl.style.removeProperty("display");
+    hideEl.removeAttribute(ORIGINAL_HTML);
+    hideEl.removeAttribute(TRANSLATED);
     return;
   }
   overlay.textContent = text;
@@ -340,22 +432,29 @@ function showLoadingInline(contentEl) {
 }
 
 function restoreOriginal(contentEl) {
-  findTranslationOverlay(contentEl)?.remove();
-  let sibling = contentEl.nextElementSibling;
+  const hideEl =
+    contentEl.closest?.('[class*="repliedTextContent"]') ||
+    (isReplyPreviewContent(contentEl) ? contentEl : contentEl);
+  findTranslationOverlay(hideEl)?.remove();
+  let sibling = hideEl.nextElementSibling;
   while (sibling?.classList?.contains("discord-translate-inline-translation")) {
     const next = sibling.nextElementSibling;
     sibling.remove();
     sibling = next;
   }
-  contentEl.classList.remove("discord-translate-content-suppressed");
-  contentEl.removeAttribute(ORIGINAL_HTML);
-  contentEl.removeAttribute(TRANSLATED);
+  hideEl.classList.remove("discord-translate-content-suppressed");
+  hideEl.hidden = false;
+  hideEl.style.removeProperty("display");
+  hideEl.removeAttribute(ORIGINAL_HTML);
+  hideEl.removeAttribute(TRANSLATED);
 }
 
 function restoreMessage(messageEl) {
   messageEl.querySelectorAll(".discord-translate-inline-translation").forEach((n) => n.remove());
   messageEl.querySelectorAll(`[${TRANSLATED}], [${ORIGINAL_HTML}], .discord-translate-content-suppressed`).forEach((el) => {
     el.classList.remove("discord-translate-content-suppressed");
+    el.hidden = false;
+    el.style.removeProperty("display");
     el.removeAttribute(ORIGINAL_HTML);
     el.removeAttribute(TRANSLATED);
   });
@@ -390,18 +489,23 @@ function setTranslateButtonLabel(messageEl, mode, settings) {
 
 function ensureContentSuppressedForOverlays(messageEl) {
   for (const target of collectTranslateTargets(messageEl)) {
+    const hideEl =
+      target.el.closest?.('[class*="repliedTextContent"]') ||
+      (isReplyPreviewContent(target.el) ? target.el : target.el);
     const overlay =
-      findTranslationOverlay(target.el) ||
-      (target.el.nextElementSibling?.classList?.contains("discord-translate-inline-translation")
-        ? target.el.nextElementSibling
+      findTranslationOverlay(hideEl) ||
+      (hideEl.nextElementSibling?.classList?.contains("discord-translate-inline-translation")
+        ? hideEl.nextElementSibling
         : null);
     if (!overlay) continue;
-    if (overlay.dataset.discordTranslateFor && !target.el.dataset.discordTranslateTargetId) {
-      target.el.dataset.discordTranslateTargetId = overlay.dataset.discordTranslateFor;
+    if (overlay.dataset.discordTranslateFor && !hideEl.dataset.discordTranslateTargetId) {
+      hideEl.dataset.discordTranslateTargetId = overlay.dataset.discordTranslateFor;
     }
-    target.el.classList.add("discord-translate-content-suppressed");
-    target.el.setAttribute(TRANSLATED, "1");
-    target.el.setAttribute(ORIGINAL_HTML, "1");
+    hideEl.classList.add("discord-translate-content-suppressed");
+    hideEl.hidden = true;
+    hideEl.style.setProperty("display", "none", "important");
+    hideEl.setAttribute(TRANSLATED, "1");
+    hideEl.setAttribute(ORIGINAL_HTML, "1");
   }
 }
 
@@ -479,8 +583,8 @@ function ensureTranslateButton(messageEl, getSettingsSnapshot) {
     markTranslationReady(messageEl);
   }
 
-  const main = findMessageContent(messageEl);
-  if (!main || !extractMessageText(main)) {
+  const targets = collectTranslateTargets(messageEl);
+  if (!targets.some((t) => extractTargetText(t.el))) {
     getTranslateWrap(messageEl)?.remove();
     return;
   }
@@ -519,7 +623,7 @@ function ensureTranslateButton(messageEl, getSettingsSnapshot) {
 async function translateTarget(target, settings, messageEl, { apply = true } = {}) {
   if (apply && messageEl && getStoredView(messageEl) === "original") return "skip";
 
-  const text = extractMessageText(target.el);
+  const text = extractTargetText(target.el);
   if (!text) return "skip";
 
   const record = messageEl ? getStateRecord(messageEl) : null;
@@ -564,14 +668,14 @@ async function processIncomingMessage(
   const targets = collectTranslateTargets(messageEl);
   if (!targets.length) return;
 
-  const hasText = targets.some((t) => extractMessageText(t.el));
+  const hasText = targets.some((t) => extractTargetText(t.el));
   if (!hasText) return;
 
   messageEl.setAttribute(DISCORD_TRANSLATE_ATTR.PROCESSED, `pending:${key}`);
 
   if (showLoading) {
     for (const target of targets) {
-      const text = extractMessageText(target.el);
+      const text = extractTargetText(target.el);
       if (!getCachedTranslation(target.el, text) && !getMemoryCachedTranslation(messageEl, text)) {
         showLoadingInline(target.el);
       }
@@ -712,6 +816,15 @@ function collectMessageElements() {
   }
 
   for (const content of document.querySelectorAll('[id^="message-content-"]')) {
+    if (isReplyPreviewContent(content)) {
+      const replyWrap =
+        content.closest('[id^="chat-messages-"]') ||
+        content.closest('[data-list-item-id*="chat-messages"]') ||
+        content.closest('[class*="messageListItem"]') ||
+        content.closest('[role="listitem"]');
+      if (replyWrap) add(replyWrap, messageKey(replyWrap) || replyWrap.id);
+      continue;
+    }
     const wrap =
       content.closest('[id^="chat-messages-"]') ||
       content.closest('[data-list-item-id*="chat-messages"]') ||
@@ -789,6 +902,8 @@ function resetIncomingTranslations() {
   document.querySelectorAll(".discord-translate-inline-translation").forEach((el) => el.remove());
   document.querySelectorAll(`[${ORIGINAL_HTML}], .discord-translate-content-suppressed`).forEach((el) => {
     el.classList.remove("discord-translate-content-suppressed", "discord-translate-inline-error");
+    el.hidden = false;
+    el.style.removeProperty("display");
     el.removeAttribute(ORIGINAL_HTML);
     el.removeAttribute(TRANSLATED);
   });

@@ -1,10 +1,24 @@
-.discord-translate-content-suppressed {
+.discord-translate-content-suppressed,
+[class*="repliedTextContent"].discord-translate-content-suppressed,
+[class*="repliedTextPreview"].discord-translate-content-suppressed,
+[id^="message-content-"].discord-translate-content-suppressed {
   display: none !important;
+  visibility: hidden !important;
+  max-height: 0 !important;
+  overflow: hidden !important;
+  -webkit-line-clamp: unset !important;
+  -webkit-box-orient: unset !important;
 }
 
 .discord-translate-inline-translation {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+[class*="repliedTextContent"].discord-translate-inline-translation {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .discord-translate-translate-wrap,
